@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: bright-hearts-rpg-server
+    runtime: node
+    plan: free
+    buildCommand: "echo no build needed"
+    startCommand: node server/index.js
+    healthCheckPath: /
+    autoDeploy: true

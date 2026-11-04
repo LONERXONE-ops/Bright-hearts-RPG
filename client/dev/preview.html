@@ -1,0 +1,16 @@
+<!doctype html><html><body style="margin:0;background:#3a5a3f">
+<canvas id="c" width="1400" height="900"></canvas>
+<script type="module">
+import { humanSheet, lookFor, NPC_LOOKS } from '../src/art/chars.js';
+const c = document.getElementById('c'), g = c.getContext('2d');
+g.imageSmoothingEnabled = false;
+const S = 4;
+const classes = ['warrior','mage','savage','gunman','engineer'];
+const hairs = ['brown','blonde','red','black','pink'];
+const pick = [0,2,4,6,7,9,10,12,16,17];
+classes.forEach((cl,i)=>{
+  const sh = humanSheet(lookFor(cl,{hair:hairs[i], style:['spiky','long','short','pony','bob'][i]})).canvas();
+  pick.forEach((f,j)=> g.drawImage(sh, f*32,0,32,32, j*130, i*130, 128, 128));
+});
+window.done=true;
+</script></body></html>

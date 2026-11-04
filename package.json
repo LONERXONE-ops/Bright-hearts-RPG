@@ -1,0 +1,13 @@
+{
+  "name": "bright-hearts-rpg",
+  "version": "0.1.0",
+  "description": "Bright Hearts RPG: co-op pixel art dungeon raid RPG by LONERXONE",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node tools/serve.js"
+  },
+  "engines": { "node": ">=18" },
+  "author": "LONERXONE",
+  "license": "UNLICENSED"
+}
