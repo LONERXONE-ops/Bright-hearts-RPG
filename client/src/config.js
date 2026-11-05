@@ -9,4 +9,4 @@ export const DEFAULT_SERVER = 'wss://bright-hearts-rpg-server.onrender.com';
 export const GITHUB = 'https://github.com/LONERXONE-ops/Bright-hearts-RPG';
 export const CREDIT = 'LONERXONE';
 
-export const ZOOM_TARGET_H = 210; // world pixels visible vertically (picks an integer zoom)
+export const ZOOM_TARGET_H = 230; // world pixels visible vertically (device pixels / zoom)

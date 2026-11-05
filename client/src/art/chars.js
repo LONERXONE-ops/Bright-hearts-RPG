@@ -13,11 +13,12 @@ export const SKIN = [R.skin, R.skin2, R.skin3];
 
 // ---------- class looks ----------
 export const CLASS_LOOK = {
-  warrior: { topStyle: 'plate', top: R.steel, pants: R.leather, boots: R.wood, scarf: R.red, weapon: 'sword', cape: R.red },
-  mage: { topStyle: 'robe', top: R.purple, trim: R.gold, pants: R.purple, boots: R.cloth, hat: 'wizard', hatRamp: R.purple, weapon: 'staff' },
-  savage: { topStyle: 'fur', top: R.leather, pants: R.leather, boots: R.fur, hat: 'horned', weapon: 'axe', big: true },
-  gunman: { topStyle: 'coat', top: R.blue, trim: R.gold, pants: R.cloth, boots: R.leather, hat: 'brim', hatRamp: R.leather, weapon: 'rifle', scarf: R.orange },
-  engineer: { topStyle: 'jumpsuit', top: R.teal, trim: R.orange, pants: R.teal, boots: R.leather, hat: 'goggles', weapon: 'wrench', pack: true },
+  // Looks follow LONERXONE's character sheets
+  warrior: { topStyle: 'tunic', top: R.sky, trim: R.bone, strap: true, gloves: R.darkcloth, pants: R.darkcloth, boots: R.wood, bootTrim: R.bone, scarf: R.red, cape: R.crimson, torn: true, weapon: 'sword', eyes: '#4b3f9a', hairRamp: R.hairBrown, hairStyle: 'messy' },
+  engineer: { topStyle: 'coat', top: R.teal, trim: R.gold, coatLong: true, strap: true, belts: true, gloves: R.leather, pants: R.darkcloth, boots: R.leather, bootTrim: R.teal, hat: 'goggles', weapon: 'wrench', eyes: '#8a6a1c', hairRamp: R.hairBrown, hairStyle: 'spiky' },
+  gunman: { topStyle: 'coat', top: R.blue, trim: R.bone, coatLong: true, inner: R.darkcloth, strap: true, gloves: R.darkcloth, pants: R.darkcloth, boots: R.leather, bootTrim: R.gold, hat: 'brim', hatRamp: R.leather, weapon: 'revolver', scarf: R.orange, eyes: '#5a2a3a', hairRamp: R.hairBrown, hairStyle: 'messy' },
+  mage: { topStyle: 'robe', top: R.purple, trim: R.gold, frill: true, boots: R.purple, hat: 'wizard', hatRamp: R.purple, hatStar: true, weapon: 'staff', eyes: '#8a3fd0', lashes: true, hairRamp: R.hairBrown, hairStyle: 'long' },
+  savage: { topStyle: 'crop', top: R.leather, mantle: true, skirt: R.fur, gloves: R.leather, pants: null, boots: R.leather, bootFur: true, hat: 'horned', helmRamp: R.helm, helmHair: true, weapon: 'bow', quiver: true, eyes: '#8a5a1c', lashes: true, hairRamp: R.blonde, hairStyle: 'long' },
 };
 
 function rampC(r, i) { return r[Math.max(0, Math.min(r.length - 1, i))]; }
@@ -97,6 +98,29 @@ function drawWeapon(p, kind, hx, hy, pose, back) {
     p.set(x1 - 1, y1 - 1, S[5]); p.set(x1 + 2, y1 - 1, S[5]); p.set(x1 - 1, y1 - 2, S[4]); p.set(x1 + 2, y1 - 2, S[4]);
     return;
   }
+  if (kind === 'revolver') {
+    const up = pose === 'a0' ? -3 : 0;
+    const x = pose === 'a1' ? hx + 1 : hx, y = hy - 1 + up;
+    p.hline(x, x + 5, y, S[5]); p.hline(x, x + 5, y + 1, S[3]);
+    p.rect(x, y, 2, 2, S[4]); p.set(x + 1, y + 1, S[2]);
+    p.set(x - 1, y + 1, W[3]); p.set(x - 1, y + 2, W[2]); p.set(x, y + 2, W[3]);
+    if (pose === 'a1') { p.set(x + 6, y, '#fff1a8'); p.set(x + 7, y, '#ffc34a'); p.set(x + 6, y - 1, '#ffc34a'); p.set(x + 6, y + 1, '#ff8a2b'); p.set(x + 8, y, '#ff8a2b'); }
+    return;
+  }
+  if (kind === 'bow') {
+    const x = hx + 1, y = hy - 1;
+    // limbs (curved), grip, string
+    for (let j = -8; j <= 8; j++) {
+      const bend = Math.round(3 - (j * j) / 22);
+      p.set(x + bend, y + j, Math.abs(j) > 6 ? R.bone[4] : W[3]);
+      if (Math.abs(j) < 7) p.set(x + bend + 1, y + j, W[1]);
+    }
+    p.set(x + 3, y, R.leather[1]); p.set(x + 3, y + 1, R.leather[1]);
+    const pull = pose === 'a0' ? -3 : 0;
+    p.line(x, y - 8, x + pull, y, R.bone[5]); p.line(x + pull, y, x, y + 8, R.bone[5]);
+    if (pose === 'a0' || pose === 'a1') { p.hline(x + pull, x + 9, y, R.wood[4]); p.set(x + 10, y, S[6]); p.set(x + 9, y - 1, S[4]); p.set(x + 9, y + 1, S[4]); p.set(x + pull + 1, y - 1, R.red[4]); }
+    return;
+  }
   if (kind === 'spear') {
     p.vline(hx + 1, hy - 18, hy + 7, W[3]);
     p.vline(hx + 2, hy - 18, hy + 7, W[1]);
@@ -136,7 +160,11 @@ function drawHair(p, o, cx, top, back) {
   } else {
     for (let y = top + 5; y < top + 11; y++) for (let x = cx - 6; x <= cx + 5; x++) p.set(x, y, rampC(H, x < cx - 2 ? 3 : x > cx + 2 ? 1 : 2));
   }
-  if (st === 'spiky') {
+  if (st === 'messy') {
+    for (const [dx, dy] of [[-6, 0], [-4, -1], [-2, -2], [0, -1], [2, -2], [4, -1], [6, 1]]) { p.set(cx + dx, top + dy, rampC(H, 4)); p.set(cx + dx, top + dy + 1, rampC(H, 3)); }
+    if (!back) { p.set(cx - 2, top + 8, rampC(H, 2)); p.set(cx + 1, top + 8, rampC(H, 2)); p.set(cx - 1, top + 9, rampC(H, 1)); }
+    p.set(cx - 7, top + 4, rampC(H, 3)); p.set(cx + 6, top + 5, rampC(H, 2)); p.set(cx - 7, top + 7, rampC(H, 2)); p.set(cx + 6, top + 8, rampC(H, 1));
+  } else if (st === 'spiky') {
     for (let i = 0; i < 5; i++) { const x = cx - 5 + i * 2 + 1; p.set(x, top - 1, rampC(H, 4)); p.set(x, top - 2, rampC(H, 5)); }
     p.set(cx - 7, top + 2, rampC(H, 3)); p.set(cx + 6, top + 2, rampC(H, 2));
   } else if (st === 'long') {
@@ -165,6 +193,11 @@ function drawHat(p, o, cx, top, back) {
     }
     p.hline(cx - 5, cx + 4, top + 3, R.gold[4]);
     p.set(cx + 2, top - 6, R.gold[5]);
+    if (o.hatStar) {
+      const sx = back ? cx - 5 : cx + 4, sy = top + 1;
+      p.set(sx, sy - 1, R.gold[5]); p.set(sx - 1, sy, R.gold[4]); p.set(sx, sy, R.gold[5]); p.set(sx + 1, sy, R.gold[4]); p.set(sx, sy + 1, R.gold[3]);
+      p.set(sx - 2, sy + 1, R.purple[5]); p.set(sx - 2, sy + 2, R.purple[4]); p.set(sx + 2, sy + 1, R.purple[4]);
+    }
     return 'cover';
   }
   if (hat === 'brim') {
@@ -175,7 +208,7 @@ function drawHat(p, o, cx, top, back) {
     return 'brim';
   }
   if (hat === 'horned') {
-    const B = R.bone, S = R.steel;
+    const B = R.bone, S = o.helmRamp || R.steel;
     for (let y = top; y < top + 5; y++) for (let x = cx - 6; x <= cx + 5; x++) {
       if (y === top && (x < cx - 4 || x > cx + 3)) continue;
       p.set(x, y, rampC(S, x < cx - 2 ? 4 : x > cx + 2 ? 2 : 3));
@@ -184,7 +217,7 @@ function drawHat(p, o, cx, top, back) {
     // horns
     const horn = [[0, 0], [-1, -1], [-2, -2], [-2, -3], [-3, -4], [-3, -5]];
     for (const [dx, dy] of horn) { p.set(cx - 7 + dx, top + 3 + dy, rampC(B, 4)); p.set(cx - 6 + dx, top + 3 + dy, rampC(B, 3)); p.set(cx + 6 - dx, top + 3 + dy, rampC(B, 3)); p.set(cx + 5 - dx, top + 3 + dy, rampC(B, 2)); }
-    if (!back) { p.vline(cx - 1, top + 2, top + 5, S[2]); }
+    if (!back && !o.helmHair) { p.vline(cx - 1, top + 2, top + 5, S[2]); }
     return 'helm';
   }
   if (hat === 'goggles') {
@@ -274,7 +307,10 @@ export function drawHuman(o, pose, back = false) {
   // back items (drawn first)
   if (o.cape && !back) {
     // a glimpse of cape behind legs
-    p.rect(tx - 1, torsoTop + 2, tw + 2, 9, o.cape[1]);
+    for (let y = torsoTop + 2; y < torsoTop + 12; y++) for (let x = tx - 2; x <= tx + tw + 1; x++) {
+      if (o.torn && y > torsoTop + 8 && (x * 7 + y) % 4 === 0) continue;
+      p.set(x, y, o.cape[y > torsoTop + 8 ? 1 : 2]);
+    }
   }
   if (o.pack && !back) {
     p.rect(cx - 7, torsoTop + 1, 2, 6, R.leather[2]); p.rect(cx + 5, torsoTop + 1, 2, 6, R.leather[1]);
@@ -288,9 +324,11 @@ export function drawHuman(o, pose, back = false) {
   if (!robe) {
     for (const [x, lift, side] of [[lx, lL, 0], [rx, lR, 1]]) {
       for (let y = legTop + bob; y <= footY + lift; y++) {
-        const boot = y >= footY - 2 + lift;
-        const ramp = boot ? o.boots || R.wood : o.pants || R.leather;
-        for (let i = 0; i < legW; i++) p.set(x + i, y, rampC(ramp, i === 0 ? 3 - side : 2 - side));
+        const bootTop = footY - (o.bootFur ? 4 : 3) + lift;
+        const boot = y >= bootTop;
+        let ramp = boot ? o.boots || R.wood : o.pants || skin;
+        if (boot && y === bootTop && (o.bootTrim || o.bootFur)) ramp = o.bootFur ? R.fur.slice(2) : o.bootTrim;
+        for (let i = 0; i < legW; i++) p.set(x + i, y, rampC(ramp, (i === 0 ? 3 - side : 2 - side) + (boot && y === bootTop ? 1 : 0)));
       }
       if (lift) p.hline(x, x + legW - 1, footY, null);
     }
@@ -308,6 +346,7 @@ export function drawHuman(o, pose, back = false) {
         if (y === footY) k = 1;
         p.set(x, y, rampC(T, k));
       }
+      if (o.frill && (y === footY - 3 || y === footY - 2)) { for (let x = x0; x <= x1; x++) if (y === footY - 3 || x % 2) p.set(x, y, x % 3 ? '#f2eafc' : '#cdbfe6'); }
       if (o.trim && y >= footY - 1) p.hline(x0, x1, y, rampC(o.trim, y === footY ? 2 : 4));
     }
     if (o.trim) p.vline(cx - 1, torsoTop + 2, footY - 2, rampC(o.trim, 4));
@@ -340,11 +379,47 @@ export function drawHuman(o, pose, back = false) {
     if (o.topStyle === 'apron') {
       if (!back) for (let y = torsoTop + 1; y < torsoTop + 11; y++) for (let x = tx + 1; x < tx + tw - 1; x++) p.set(x, y, rampC(R.leather, x < cx ? 3 : 2));
     }
-    // belt
-    if (o.topStyle !== 'fur' || true) {
-      p.hline(tx, tx + tw - 1, torsoTop + 7, R.leather[1]);
-      if (!back) p.set(cx - 1, torsoTop + 7, R.gold[4]);
+    if (o.topStyle === 'tunic' && o.trim) {
+      // tunic skirt below belt + white trim like the Hero sheet
+      for (let y = torsoTop + 8; y <= torsoTop + 9; y++) for (let x = tx; x < tx + tw; x++) p.set(x, y, rampC(T, x < cx ? 3 : 2));
+      p.hline(tx, tx + tw - 1, torsoTop + 9, rampC(o.trim, 4));
+      if (!back) { p.vline(cx - 2, torsoTop + 1, torsoTop + 9, rampC(o.trim, 4)); p.vline(cx + 1, torsoTop + 1, torsoTop + 9, rampC(o.trim, 3)); }
+      p.set(tx, torsoTop, rampC(o.trim, 4)); p.set(tx + tw - 1, torsoTop, rampC(o.trim, 3));
     }
+    if (o.coatLong) {
+      for (let y = torsoTop + 8; y <= torsoTop + 12; y++) {
+        const fl = y > torsoTop + 10 ? 1 : 0;
+        p.set(tx - 1 - fl, y, rampC(T, 3)); p.set(tx - fl, y, rampC(T, 3)); p.set(tx + tw - 1 + fl, y, rampC(T, 1)); p.set(tx + tw + fl, y, rampC(T, 1));
+        if (y === torsoTop + 12) { p.set(tx - 1 - fl, y, rampC(o.trim, 4)); p.set(tx - fl, y, rampC(o.trim, 4)); p.set(tx + tw - 1 + fl, y, rampC(o.trim, 3)); p.set(tx + tw + fl, y, rampC(o.trim, 3)); }
+      }
+      if (!back) { p.vline(tx, torsoTop, torsoTop + 11, rampC(o.trim, 4)); p.vline(tx + tw - 1, torsoTop, torsoTop + 11, rampC(o.trim, 3)); }
+    }
+    if (o.inner && !back) for (let y = torsoTop + 1; y <= torsoTop + 6; y++) for (let x = cx - 2; x <= cx + 1; x++) p.set(x, y, rampC(o.inner, x < cx ? 3 : 2));
+    if (o.topStyle === 'crop') {
+      if (!back) {
+        for (let x = tx + 1; x < tx + tw - 1; x++) { p.set(x, torsoTop, rampC(skin, x < cx ? 3 : 2)); p.set(x, torsoTop + 1, rampC(skin, x < cx ? 3 : 2)); }
+        p.hline(cx - 2, cx + 1, torsoTop, R.leather[1]); p.set(cx - 1, torsoTop + 1, R.bone[5]);
+        for (let y = torsoTop + 5; y <= torsoTop + 6; y++) for (let x = tx + 1; x < tx + tw - 1; x++) p.set(x, y, rampC(skin, x < cx ? 3 : 2));
+        p.set(cx - 1, torsoTop + 6, skin[2]);
+      }
+    }
+    if (o.strap) p.line(tx, torsoTop + 1, tx + tw - 1, torsoTop + 6, back ? R.leather[1] : R.leather[2]);
+    // belt
+    p.hline(tx, tx + tw - 1, torsoTop + 7, R.leather[1]);
+    if (!back) { p.set(cx - 1, torsoTop + 7, R.gold[4]); p.set(cx, torsoTop + 7, R.gold[3]); }
+    if (o.belts && !back) { p.rect(tx - 1, torsoTop + 8, 2, 2, R.leather[3]); p.rect(tx + tw - 1, torsoTop + 8, 2, 2, R.leather[2]); p.set(cx + 2, torsoTop + 8, R.teal[5]); }
+    if (o.skirt) {
+      for (let y = torsoTop + 8; y <= torsoTop + 11; y++) for (let x = tx - 1; x <= tx + tw; x++) {
+        if (y === torsoTop + 11 && (x + (back ? 1 : 0)) % 2) continue;
+        p.set(x, y, rampC(o.skirt, x < cx ? 4 : 3) );
+      }
+      if (!back) { p.set(cx - 3, torsoTop + 9, R.bone[5]); p.set(cx, torsoTop + 10, R.bone[5]); p.set(cx + 2, torsoTop + 9, R.bone[5]); }
+    }
+  }
+  if (o.mantle) {
+    // fur pauldrons on the shoulders (kept off the face)
+    for (const x0 of [tx - 3, tx + tw - 1]) for (let x = x0; x < x0 + 4; x++) { p.set(x, torsoTop, rampC(R.fur, 5)); p.set(x, torsoTop + 1, rampC(R.fur, 4 - (x & 1))); if (x % 2) p.set(x, torsoTop + 2, R.fur[3]); }
+    if (back) for (let y = torsoTop + 1; y < torsoTop + 12; y++) for (let x = tx - 1; x <= tx + tw; x++) { if (y === torsoTop + 11 && x % 2) continue; p.set(x, y, rampC(R.fur, x < cx ? 4 : 3)); }
   }
 
   // scarf
@@ -357,8 +432,15 @@ export function drawHuman(o, pose, back = false) {
   if (o.cape && back) {
     for (let y = torsoTop; y < torsoTop + 12; y++) {
       const fl = Math.floor((y - torsoTop) / 4);
-      for (let x = tx - fl; x <= tx + tw - 1 + fl; x++) p.set(x, y, rampC(o.cape, x < cx - 1 ? 3 : 2));
+      for (let x = tx - fl; x <= tx + tw - 1 + fl; x++) {
+        if (o.torn && y > torsoTop + 9 && ((x * 7 + y) % 5 === 0 || (y === torsoTop + 11 && x % 2))) continue;
+        p.set(x, y, rampC(o.cape, x < cx - 1 ? 3 : 2));
+      }
     }
+  }
+  if (o.quiver) {
+    if (back) { p.rect(cx + 1, torsoTop - 2, 3, 9, R.leather[2]); for (const x of [cx + 1, cx + 2, cx + 3]) { p.set(x, torsoTop - 3, R.wood[4]); p.set(x, torsoTop - 4, R.bone[5]); } }
+    else { p.set(cx - 5, torsoTop - 2, R.bone[5]); p.set(cx - 6, torsoTop - 3, R.bone[5]); p.set(cx - 4, torsoTop - 2, R.wood[3]); }
   }
   if (o.pack && back) {
     p.rect(cx - 5, torsoTop - 1, 10, 9, R.leather[3]);
@@ -377,7 +459,8 @@ export function drawHuman(o, pose, back = false) {
     let y0 = torsoTop + 1, y1 = torsoTop + 5 + sw;
     if (side === 1 && (pose === 'a0')) { y1 = torsoTop + 2; }
     for (let y = y0; y <= y1; y++) for (let i = 0; i < armW; i++) p.set(x + i, y, rampC(sleeve, (side ? 2 : 3) + (i === 0 ? 1 : 0) - (y === y1 ? 1 : 0)));
-    for (let i = 0; i < armW; i++) p.set(x + i, y1 + 1, rampC(skin, side ? 2 : 3));
+    for (let i = 0; i < armW; i++) p.set(x + i, y1 + 1, rampC(o.gloves || skin, side ? 2 : 3));
+    if (o.gloves) for (let i = 0; i < armW; i++) p.set(x + i, y1, rampC(o.gloves, side ? 1 : 2));
   }
   // extended attack arm
   if (pose === 'a1' && !back) { p.hline(ar, ar + 3, torsoTop + 4, rampC(sleeve, 3)); p.set(ar + 4, torsoTop + 4, skin[3]); }
@@ -400,7 +483,12 @@ export function drawHuman(o, pose, back = false) {
     // face below helm
   }
   if (back && hatKind === 'helm') {
-    for (let y = headTop + 5; y < headTop + 11; y++) for (let x = cx - 6; x <= cx + 5; x++) p.set(x, y, rampC(o.hairRamp || HAIR.brown, 2));
+    const H = o.hairRamp || HAIR.brown;
+    for (let y = headTop + 5; y < headTop + (o.helmHair ? 17 : 11); y++) for (let x = cx - 6; x <= cx + 5; x++) p.set(x, y, rampC(H, x < cx - 2 ? 4 : x > cx + 2 ? 2 : 3));
+  } else if (hatKind === 'helm' && o.helmHair) {
+    const H = o.hairRamp;
+    for (let y = headTop + 5; y < headTop + 17; y++) { p.set(cx - 7, y, rampC(H, 4)); p.set(cx - 6, y, rampC(H, 3)); p.set(cx + 5, y, rampC(H, 3)); p.set(cx + 6, y, rampC(H, 2)); }
+    for (let x = cx - 5; x <= cx + 4; x++) { p.set(x, headTop + 6, rampC(H, x % 3 ? 4 : 3)); if (x % 2) p.set(x, headTop + 7, rampC(H, 3)); }
   }
 
   // face
@@ -414,6 +502,7 @@ export function drawHuman(o, pose, back = false) {
       p.set(cx - 4, ey + 1, eyeC); p.set(cx + 1, ey + 1, eyeC);
       p.set(cx - 4, ey, '#ffffff'); p.set(cx + 1, ey, '#ffffff');
     }
+    if (o.lashes && pose !== 'hurt') { p.set(cx - 5, ey, INK); p.set(cx + 3, ey, INK); }
     p.set(cx - 5, ey + 2, R.pink[4]); p.set(cx + 4, ey + 2, R.pink[3]);
     p.set(cx - 1, ey + 3, skin[1]);
     if (o.beard) {
@@ -445,14 +534,9 @@ export function humanSheet(o) {
   return strip(frames);
 }
 
-export function lookFor(cls, custom = {}) {
-  const base = CLASS_LOOK[cls] || CLASS_LOOK.warrior;
-  return {
-    ...base,
-    skin: SKIN[custom.skin | 0] || R.skin,
-    hairRamp: HAIR[custom.hair] || HAIR.brown,
-    hairStyle: custom.style || 'spiky',
-  };
+export function lookFor(cls) {
+  // each class is a fixed character (see the character sheets)
+  return { skin: R.skin, ...(CLASS_LOOK[cls] || CLASS_LOOK.warrior) };
 }
 
 // NPC presets

@@ -143,3 +143,10 @@ export function snare() {
   p.ellipse(12, 6, 2, 1, R.orange[4]);
   return p;
 }
+
+export function arrow() {
+  const p = new Pix(14, 5);
+  p.hline(1, 10, 2, R.wood[4]); p.set(0, 1, R.red[4]); p.set(0, 3, R.red[4]); p.set(1, 1, R.red[3]); p.set(1, 3, R.red[3]);
+  p.set(11, 1, R.steel[4]); p.set(11, 3, R.steel[4]); p.hline(11, 13, 2, R.steel[6]);
+  return p;
+}

@@ -3,7 +3,7 @@ import { R } from '../art/palette.js';
 
 export const SLOTS = ['weapon', 'helmet', 'chest', 'greaves', 'boots'];
 export const SLOT_ICON = { weapon: 'sword', helmet: 'helmet', chest: 'chest', greaves: 'greaves', boots: 'boots' };
-export const CLASS_WEAPON_ICON = { warrior: 'sword', mage: 'staff', savage: 'axe', gunman: 'rifle', engineer: 'wrench' };
+export const CLASS_WEAPON_ICON = { warrior: 'sword', mage: 'staff', savage: 'bow', gunman: 'revolver', engineer: 'wrench' };
 
 export const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'gold'];
 export const RARITY_NAME = { common: 'Common', uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic', gold: "King's Gold" };
@@ -83,8 +83,8 @@ function rollRarity(table, r = Math.random()) {
 const WEAPON_NAMES = {
   warrior: ['Ruin Blade', 'Moss-Edge Saber', 'Fang Sword', 'Vine Cutter'],
   mage: ['Lotus Staff', 'Verdant Rod', 'Serpent Wand', 'Sage Branch'],
-  savage: ['Root Greataxe', 'Stone Cleaver', 'Bramble Maul', 'Temple Axe'],
-  gunman: ['Jungle Rifle', 'Viper Carbine', 'Long Musket', 'Ruin Repeater'],
+  savage: ['Root Longbow', 'Bone Recurve', 'Bramble Bow', 'Temple Warbow'],
+  gunman: ['Jungle Revolver', 'Viper Six-Gun', 'Brass Peacemaker', 'Ruin Repeater'],
   engineer: ['Brass Wrench', 'Gear Spanner', 'Cog Driver', 'Tinker Hammer'],
 };
 const ARMOR_NAMES = { helmet: 'Hood', chest: 'Mail', greaves: 'Greaves', boots: 'Treads' };

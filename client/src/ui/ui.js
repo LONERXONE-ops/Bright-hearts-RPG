@@ -19,7 +19,18 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const fmt = (n) => Math.floor(n).toLocaleString();
 const COIN = () => icon('coin');
 const RCOL = { common: 'var(--common)', uncommon: 'var(--uncommon)', rare: 'var(--rare)', epic: 'var(--epic)', gold: 'var(--goldr)', warn: 'var(--warn)', info: 'var(--line)', quest: 'var(--pink)' };
-const CLASS_ICON = { warrior: 'sword', mage: 'staff', savage: 'axe', gunman: 'rifle', engineer: 'wrench' };
+const CLASS_ICON = { warrior: 'sword', mage: 'staff', savage: 'bow', gunman: 'revolver', engineer: 'wrench' };
+// LONERXONE's character art (cropped from the character sheets)
+export const art = (cls, kind = 'face') => `./art/heroes/${cls}_${kind}.webp`;
+
+export function goFullscreen() {
+  const el = document.documentElement;
+  const rf = el.requestFullscreen || el.webkitRequestFullscreen;
+  const lock = () => { try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* ignore */ } };
+  if (rf && !(document.fullscreenElement || document.webkitFullscreenElement)) {
+    try { const r = rf.call(el, { navigationUI: 'hide' }); if (r && r.then) r.then(lock).catch(() => {}); else lock(); } catch (e) { /* ignore */ }
+  } else lock();
+}
 
 const sheetCache = {};
 function sheetCanvas(lookKey, look) {
@@ -68,32 +79,34 @@ export class UI {
   showTitle() {
     const el = document.createElement('div');
     el.id = 'title';
+    el.className = 'stars';
     const saveData = loadSave();
     el.innerHTML = `
       <div class="ver">v${VERSION}</div>
       <img class="logo" src="./logo.png" alt="Bright Hearts RPG">
       <div class="menu">
-        ${saveData ? `<button class="btn gold" data-a="continue"><img class="ic px" src="${icon('heart')}">Continue · ${esc(saveData.name)} Lv${saveData.level}</button>` : ''}
-        <button class="btn ${saveData ? '' : 'gold'}" data-a="new">${saveData ? 'New Hero' : 'Start Adventure'}</button>
-        <button class="btn ghost" data-a="settings"><img class="ic px" src="${icon('gear')}">Settings</button>
+        ${saveData ? `<button class="btn gold" data-a="continue"><img class="ic" src="${icon('heart')}">Continue · ${esc(saveData.name)} Lv${saveData.level}</button>` : ''}
+        <button class="btn ${saveData ? 'violet' : 'gold'}" data-a="new">${saveData ? 'New Hero' : 'Start Adventure'}</button>
+        <button class="btn violet" data-a="settings"><img class="ic" src="${icon('gear')}">Settings</button>
       </div>
       <div class="tap">co-op dungeon raids for 1 to 10 heroes</div>
+      <div class="lineup">${['mage', 'gunman', 'warrior', 'engineer', 'savage'].map((c) => `<img src="${art(c, 'chibi')}" alt="">`).join('')}</div>
       <div class="credit">A game by <a href="${GITHUB}" target="_blank" rel="noopener">${CREDIT}</a></div>`;
-    for (let i = 0; i < 18; i++) {
-      const s = document.createElement('i');
-      s.className = 'sparkle';
-      s.style.left = Math.random() * 100 + '%';
-      s.style.top = Math.random() * 100 + '%';
-      s.style.animationDelay = Math.random() * 2.4 + 's';
-      if (i % 3 === 0) s.style.background = 'var(--pink)';
-      el.appendChild(s);
+    for (let i = 0; i < 16; i++) {
+      const sp = document.createElement('i');
+      sp.className = 'sparkle';
+      sp.style.left = Math.random() * 100 + '%';
+      sp.style.top = Math.random() * 70 + '%';
+      sp.style.animationDelay = Math.random() * 2.6 + 's';
+      el.appendChild(sp);
     }
     el.addEventListener('click', (ev) => {
       initAudio(G.settings); resumeAudio(); playMusic('title');
       const a = ev.target.closest('[data-a]')?.dataset.a;
       if (!a) return;
       sfx.ui();
-      if (a === 'continue') { G.save = saveData; el.remove(); this.startGame(); }
+      if (a !== 'settings' && G.mobile) goFullscreen();
+      if (a === 'continue') { G.save = saveData; this.migrate(G.save); el.remove(); this.startGame(); }
       else if (a === 'new') {
         if (saveData) this.confirm('Start a new hero?', 'Your current hero <b>' + esc(saveData.name) + '</b> will be replaced on this device.', () => { el.remove(); this.showCreate(); });
         else { el.remove(); this.showCreate(); }
@@ -103,79 +116,71 @@ export class UI {
     this.rotateHint();
   }
 
-  rotateHint() {
-    if ($('.rotate')) return;
-    const r = document.createElement('div');
-    r.className = 'rotate armed';
-    r.innerHTML = '<div class="ph"></div><div>Turn your phone sideways<br><small style="color:var(--dim)">Bright Hearts plays in landscape</small></div>';
-    document.body.appendChild(r);
+  migrate(s) {
+    // older saves stored custom looks; every class now has a fixed character design
+    s.look = {};
   }
 
-  /* ============================== CREATE ============================== */
+  rotateHint() {
+    if (document.querySelector('.rotate')) return;
+    const r = document.createElement('div');
+    r.className = 'rotate armed stars';
+    r.innerHTML = `<div class="ph"></div><div>Turn your phone sideways</div><button class="btn gold" data-a="fs">Play in landscape</button><a data-a="dismiss">Play anyway</a>`;
+    r.addEventListener('click', (e) => {
+      const a = e.target.closest('[data-a]')?.dataset.a;
+      if (a === 'fs') goFullscreen();
+      if (a === 'dismiss') r.classList.remove('armed');
+    });
+    document.body.appendChild(r);
+  }
 
   showCreate() {
     const el = document.createElement('div');
     el.id = 'create';
-    const st = { cls: 'warrior', name: '', hair: 'brown', style: 'spiky', skin: 0 };
+    el.className = 'stars';
+    const st = { cls: 'warrior' };
     el.innerHTML = `
-      <div class="wrap frame gold corner">
-        <div class="stage"><canvas width="64" height="64" class="pv"></canvas><div class="pedestal"></div>
-          <div class="row" style="margin-top:8px;justify-content:center" data-k="look"></div>
-        </div>
-        <div style="min-width:0;overflow:auto">
-          <h2>Choose your hero</h2>
-          <div class="classtabs"></div>
-          <div class="cinfo"></div>
-          <div class="lbl">Name</div>
-          <div class="row"><input class="field" maxlength="14" placeholder="Hero name" style="flex:1"><button class="btn gold" data-a="go">Begin</button></div>
-        </div>
+      <div class="splash"><div class="floor"></div><img alt=""></div>
+      <div class="info">
+        <div class="picks">${CLASS_ORDER.map((c) => `<div class="pick" data-c="${c}"><img src="${art(c, 'face')}" alt="${CLASSES[c].name}"></div>`).join('')}</div>
+        <div class="card-info scroll"></div>
+        <div class="row" style="flex-wrap:nowrap"><input class="field" maxlength="14" placeholder="Hero name" style="flex:1;min-width:0"><button class="btn gold" data-a="go">Begin</button></div>
       </div>`;
     document.body.appendChild(el);
-    const tabs = $('.classtabs', el);
-    tabs.innerHTML = CLASS_ORDER.map((c) => `<div class="classtab" data-c="${c}"><img src="${icon(CLASS_ICON[c])}">${CLASSES[c].name}</div>`).join('');
-    const pv = $('.pv', el);
+    const inp = el.querySelector('input');
+    inp.addEventListener('focus', () => setTimeout(() => inp.scrollIntoView({ block: 'nearest' }), 300));
     const render = () => {
-      for (const t of tabs.children) t.classList.toggle('on', t.dataset.c === st.cls);
+      for (const t of el.querySelectorAll('.pick')) t.classList.toggle('on', t.dataset.c === st.cls);
       const C = CLASSES[st.cls];
-      const sheet = humanSheet(lookFor(st.cls, st)).canvas();
-      this.anim = this.anim.filter((a) => a.canvas !== pv);
-      this.animate(pv, sheet, [2, 3, 4, 5, 2, 3, 4, 5, 6, 7, 7, 0, 1, 0, 1]);
-      $('.cinfo', el).innerHTML = `
-        <div><span class="tag" style="color:${CLASS_COLORS[st.cls]}">${C.archetype}</span><span class="tag">${C.role}</span><span class="tag">${C.resource === 'scrap' ? 'Uses Scrap' : 'Uses Mana'}</span></div>
-        <div style="margin:4px 0 6px">${C.blurb}</div>
-        ${ATTRS.map((a) => `<div class="statrow" title="${ATTR_INFO[a]}"><span>${a[0].toUpperCase() + a.slice(1)}</span><div class="statbar"><i style="width:${Math.min(100, C.base[a] * 2.2)}%"></i></div><span>${C.base[a]}</span></div>`).join('')}
-        <div class="lbl">Skills</div>
-        <div class="row">${C.skills.map((s) => `<span class="tag" style="color:var(--text)"><img src="${icon(s.icon)}" style="width:14px;height:14px;vertical-align:-3px;image-rendering:pixelated"> ${s.name}</span>`).join('')}</div>
-        <div class="paths">${C.paths.map((p) => `<div class="path"><b>${p.name}</b>${p.desc}</div>`).join('')}</div>`;
-      $('[data-k=look]', el).innerHTML = `
-        ${Object.entries(HAIR).map(([k, r]) => `<div class="swatch ${st.hair === k ? 'on' : ''}" data-hair="${k}" style="background:${r[3]}"></div>`).join('')}
-        <div style="width:100%;height:2px"></div>
-        ${['spiky', 'short', 'long', 'bob', 'pony'].map((s) => `<div class="chip ${st.style === s ? 'on' : ''}" data-style="${s}">${s}</div>`).join('')}
-        <div style="width:100%;height:2px"></div>
-        ${SKIN.map((r, i) => `<div class="swatch ${st.skin === i ? 'on' : ''}" data-skin="${i}" style="background:${r[3]}"></div>`).join('')}`;
+      const img = el.querySelector('.splash img');
+      img.src = art(st.cls, 'full');
+      el.querySelector('.card-info').innerHTML = `
+        <div class="namebox"><div class="nm">${C.title || C.name}</div></div>
+        <div class="tagline">${C.tagline || ''}</div>
+        <div><span class="tag" style="color:${CLASS_COLORS[st.cls]}">${C.name}</span><span class="tag">${C.archetype}</span><span class="tag">${C.role}</span><span class="tag">${C.weapon}</span><span class="tag">${C.resource === 'scrap' ? 'Uses Scrap' : 'Uses Mana'}</span></div>
+        <div style="font-size:12px;color:#e6e0ff;margin:3px 0 4px">${C.blurb}</div>
+        <div class="cgrid">
+          <div>${ATTRS.map((a) => `<div class="statrow" title="${ATTR_INFO[a]}"><span>${a[0].toUpperCase() + a.slice(1)}</span><div class="statbar"><i style="width:${Math.min(100, C.base[a] * 2.2)}%"></i></div><span>${C.base[a]}</span></div>`).join('')}</div>
+          <div><div class="lbl" style="margin-top:0">Skills</div>${C.skills.map((k) => `<div style="font-size:12px;margin-bottom:3px"><img src="${icon(k.icon)}" style="width:14px;height:14px;vertical-align:-3px;image-rendering:pixelated"> <b style="font-weight:500">${k.name}</b> <span style="color:#c9bfff">${k.desc}</span></div>`).join('')}
+            <div class="paths"><div class="lbl">Paths</div><div style="font-size:12px;color:#e6e0ff">${C.paths.map((x) => x.name).join(' · ')}</div></div></div>
+        </div>`;
     };
     render();
     el.addEventListener('click', (ev) => {
-      const t = ev.target.closest('[data-c],[data-hair],[data-style],[data-skin],[data-a]');
+      const t = ev.target.closest('[data-c],[data-a]');
       if (!t) return;
       sfx.ui();
-      if (t.dataset.c) st.cls = t.dataset.c;
-      if (t.dataset.hair) st.hair = t.dataset.hair;
-      if (t.dataset.style) st.style = t.dataset.style;
-      if (t.dataset.skin) st.skin = +t.dataset.skin;
+      if (t.dataset.c) { st.cls = t.dataset.c; render(); return; }
       if (t.dataset.a === 'go') {
-        const name = $('input', el).value.trim().replace(/[<>]/g, '') || ['Ash', 'Nova', 'Kairo', 'Zuri', 'Tamsin'][Math.floor(Math.random() * 5)];
-        G.save = newCharacter(name, st.cls, { hair: st.hair, style: st.style, skin: st.skin });
+        if (G.mobile) goFullscreen();
+        const name = inp.value.trim().replace(/[<>]/g, '') || ['Ash', 'Nova', 'Kairo', 'Zuri', 'Tamsin'][Math.floor(Math.random() * 5)];
+        G.save = newCharacter(name, st.cls, {});
         writeSave(G.save);
         el.remove();
         this.startGame(true);
-        return;
       }
-      render();
     });
   }
-
-  /* ============================== GAME START ============================== */
 
   startGame(fresh) {
     initAudio(G.settings); resumeAudio();
@@ -188,6 +193,7 @@ export class UI {
     net.on('pstart', (m) => this.onPartyStart(m));
     net.on('disconnected', () => this.toast('Lost connection to the server. Reconnecting…', 'warn'));
     net.connect(G.settings.server || DEFAULT_SERVER);
+    this.game.scene.stop('backdrop');
     this.game.scene.start('world', { zone: 'village' });
     if (fresh) setTimeout(() => this.talkTo({ name: 'Captain Rhea', id: 'guild', role: 'guild', look: NPC_LOOKS.guild, line: `Welcome to Brightheart Village, ${G.save.name}! The portal south of the fountain leads to the Overgrown Ruins. Stock up at Mira's store first, then raid. Move with the stick, attack with the big red button.` }), 1500);
   }
@@ -199,62 +205,86 @@ export class UI {
     hud.id = 'hud';
     const s = G.save;
     const C = CLASSES[s.cls];
+    const res = C.resource === 'scrap' ? 'scrap' : 'mp';
     hud.innerHTML = `
       <div class="hurt"></div>
-      <div class="card frame">
-        <div class="portrait"><canvas width="64" height="64"></canvas><div class="lv">1</div></div>
+      <div class="vitals glass pe" data-a="character">
+        <div class="face"><img src="${art(s.cls)}" alt=""><div class="lv">1</div></div>
         <div class="bars">
-          <div class="nm"><span>${esc(s.name)}</span><small>${C.name}</small></div>
-          <div class="bar hp"><i class="lag"></i><i class="v"></i><span></span></div>
-          <div class="bar ${C.resource === 'scrap' ? 'scrap' : 'mp'}"><i class="v"></i><span></span></div>
-          <div class="bar xp"><i class="v"></i></div>
+          <div class="brow hp"><b>HP</b><div class="bar"><i class="lag"></i><i class="v"></i><span></span></div></div>
+          <div class="brow ${res}"><b>${res === 'scrap' ? 'SC' : 'MP'}</b><div class="bar"><i class="v"></i><span></span></div></div>
+          <div class="xpbar"><i></i></div>
           <div class="status"></div>
         </div>
       </div>
-      <div class="topright">
-        <div class="gold-pill frame"><img class="px" src="${COIN()}"><span class="g">0</span></div>
-        <button class="btn iconbtn" data-a="quests" title="Quests"><img src="${icon('scroll')}"></button>
-        <button class="btn iconbtn" data-a="character" title="Hero (I)"><img src="${icon('bag')}"></button>
-        <button class="btn iconbtn" data-a="settings" title="Settings"><img src="${icon('gear')}"></button>
+      <div class="topmid">
+        <button class="btn sqbtn pe" data-a="pause" title="Menu"><img src="${icon('pause')}" alt="Pause"></button>
+        <div class="runinfo glass hidden"><span class="tm">0:00</span><span class="kl"></span></div>
       </div>
-      <div class="netdot"><i></i><span>offline</span></div>
+      <div class="topright">
+        <div class="rowx">
+          <div class="coins glass"><img class="px" src="${COIN()}"><span class="g">0</span></div>
+          <button class="btn sqbtn pe" data-a="character" title="Hero"><img src="${icon('bag')}" alt="Hero"></button>
+          <button class="btn questbtn pe" data-a="tracker">Quest <span class="car">▼</span><img src="${icon('scroll')}" alt=""></button>
+        </div>
+        <div class="netdot"><i></i><span>offline</span></div>
+        <div class="tracker glass hidden"></div>
+      </div>
       <div class="zonebanner"><div class="t"></div><div class="orn"></div><div class="s"></div></div>
-      <div class="runbar frame hidden"><span class="dn"></span><span class="tm">0:00</span><span class="kl"></span></div>
-      <div class="bossbar frame hidden"><div class="bn"></div><div class="heads"></div></div>
+      <div class="bossbar glass hidden"><div class="bn"></div><div class="heads"></div></div>
       <div id="toasts"></div>
       <div id="chatlog"></div>
-      <div id="stick"><svg class="arrows" viewBox="0 0 100 100"><path d="M50 6 L56 14 L44 14Z M50 94 L56 86 L44 86Z M6 50 L14 44 L14 56Z M94 50 L86 44 L86 56Z" fill="#cdbfff"/></svg><div class="knob"></div></div>
-      <button class="btn iconbtn chatbtn" data-a="chat"><img src="${icon('chat')}"></button>
+      <div id="stick"><svg class="arrows" viewBox="0 0 100 100"><path d="M50 4 L57 13 L43 13Z M50 96 L57 87 L43 87Z M4 50 L13 43 L13 57Z M96 50 L87 43 L87 57Z" fill="#fff"/></svg><div class="knob"></div></div>
       <div id="actions">
-        <div class="act big" data-act="atk"><img src="${icon(CLASS_ICON[s.cls])}"></div>
-        <div class="act s1" data-act="s0"><img src="${icon(C.skills[0].icon)}"><div class="cd"></div><div class="cost ${C.resource === 'scrap' ? 'scrap' : ''}">${C.skills[0].cost}</div></div>
-        <div class="act s2" data-act="s1"><img src="${icon(C.skills[1].icon)}"><div class="cd"></div><div class="cost ${C.resource === 'scrap' ? 'scrap' : ''}">${C.skills[1].cost}</div></div>
-        <div class="act dodge" data-act="dodge"><img src="${icon('dash')}"><div class="cd"></div></div>
-        <div class="act pot" data-act="pot"><img src="${icon('potionRed')}"><div class="cd"></div><div class="num">0</div></div>
+        <div class="act" data-act="chat"><img src="${icon('chat')}" alt="Chat"></div>
+        <div class="act big" data-act="atk"><img src="${icon(CLASS_ICON[s.cls])}" alt="Attack"></div>
+        <div class="act s1" data-act="s0"><img src="${icon(C.skills[0].icon)}" alt=""><div class="cd"></div><div class="cost ${res === 'scrap' ? 'scrap' : ''}">${C.skills[0].cost}</div></div>
+        <div class="act dodge" data-act="dodge"><img src="${icon('dash')}" alt="Dodge"><div class="cd"></div></div>
+        <div class="act pot" data-act="pot"><img src="${icon('potionRed')}" alt="Potion"><div class="cd"></div><div class="num">0</div></div>
+        <div class="act s2" data-act="s1"><img src="${icon(C.skills[1].icon)}" alt=""><div class="cd"></div><div class="cost ${res === 'scrap' ? 'scrap' : ''}">${C.skills[1].cost}</div></div>
       </div>
       <button id="interact" class="btn gold hidden"><span class="k">E</span><span class="l"></span></button>
-      <div class="downed frame hidden"><div class="t">DOWNED</div><div class="s"></div></div>
+      <div class="downed frame hidden"><img src="${art(s.cls, 'shock')}" alt=""><div><div class="t">DOWNED</div><div class="s"></div></div></div>
       <div class="revive frame hidden"><div class="l"></div><div class="bar"><i class="v"></i></div></div>`;
     this.root.appendChild(hud);
     this.hud = hud;
     this.toastsEl = $('#toasts', hud);
-    const pc = $('.portrait canvas', hud);
-    drawFrame(pc, humanSheet(lookFor(s.cls, s.look)).canvas(), 0);
+    this.trackerOpen = !G.mobile || window.innerHeight > 380;
     hud.addEventListener('click', (ev) => {
       const a = ev.target.closest('[data-a]')?.dataset.a;
       if (!a) return;
       sfx.ui();
-      if (a === 'chat') this.openChat();
+      if (a === 'tracker') { this.trackerOpen = !this.trackerOpen; this.renderTracker(); }
       else this.openPanel(a);
     });
     $('#interact', hud).addEventListener('click', () => G.scene && G.scene.interact());
     this.bindStick($('#stick', hud));
     this.bindActions($('#actions', hud));
+    this.renderTracker();
     const loop = () => {
       if (this.attackHeld && G.scene && !this.panel) G.scene.combat.attack();
       requestAnimationFrame(loop);
     };
     loop();
+  }
+
+  renderTracker() {
+    const el = this.hud && $('.tracker', this.hud);
+    if (!el) return;
+    $('.questbtn .car', this.hud).textContent = this.trackerOpen ? '▲' : '▼';
+    const s = G.save;
+    const rows = [];
+    const sc = G.scene;
+    if (sc && sc.zoneKey === 'dungeon' && sc.combat && sc.map) {
+      const rooms = sc.map.rooms.filter((r) => r.kind === 'room');
+      const done = rooms.filter((r) => r.cleared).length;
+      const boss = sc.combat.boss;
+      rows.push({ t: boss && !boss.alive ? 'Return through the portal' : done < rooms.length ? 'Clear the chambers' : 'Slay the Three-Headed Snake', p: boss && !boss.alive ? 1 : done / Math.max(1, rooms.length), sub: `${done}/${rooms.length} rooms` });
+    } else if (sc && sc.zoneKey === 'village' && !s.stats.clears) rows.push({ t: 'Enter the Dungeon Portal', sub: 'South of the fountain', p: 0 });
+    for (const b of BOUNTIES) { const st = s.bounties[b.id]; if (st && !st.claimed) rows.push({ t: b.name, sub: st.done ? 'Claim at the Guild Board' : `${st.p}/${b.goal}`, p: st.p / b.goal }); }
+    for (const d of DECREES) { const st = s.decrees[d.id]; if (st && !st.claimed) rows.push({ t: d.name.replace('Royal Decree: ', ''), sub: st.done ? 'See the King' : `${fmt(st.p)}/${fmt(d.goal)}`, p: st.p / d.goal }); }
+    el.innerHTML = rows.length ? rows.slice(0, 4).map((r) => `<div class="q"><b>${esc(r.t)}</b><small>${esc(r.sub || '')}</small><div class="prog"><i style="width:${Math.min(100, r.p * 100)}%"></i></div></div>`).join('') : '<div class="q"><small>No active quests. Visit the Guild Board.</small></div>';
+    el.classList.toggle('hidden', !this.trackerOpen);
   }
 
   bindStick(stick) {
@@ -292,6 +322,7 @@ export class UI {
       const a = b.dataset.act;
       const c = G.scene.combat;
       if (a === 'atk') { this.attackHeld = true; c.attack(); }
+      else if (a === 'chat') this.openChat();
       else if (a === 's0') c.skill(0);
       else if (a === 's1') c.skill(1);
       else if (a === 'dodge') c.dodge();
@@ -310,23 +341,23 @@ export class UI {
     const set = (k, v, fn) => { if (c[k] !== v) { c[k] = v; fn(v); } };
     const hpF = Math.max(0, me.hp / me.stats.maxHp);
     set('hp', Math.round(me.hp) + '/' + me.stats.maxHp, (v) => {
-      $('.bar.hp i.v', this.hud).style.width = hpF * 100 + '%';
-      $('.bar.hp i.lag', this.hud).style.width = hpF * 100 + '%';
-      $('.bar.hp span', this.hud).textContent = v;
-      $('.bar.hp', this.hud).classList.toggle('low', hpF < 0.3);
+      $('.brow.hp i.v', this.hud).style.width = hpF * 100 + '%';
+      $('.brow.hp i.lag', this.hud).style.width = hpF * 100 + '%';
+      $('.brow.hp span', this.hud).textContent = v;
+      $('.brow.hp .bar', this.hud).classList.toggle('low', hpF < 0.3);
     });
     const mpF = Math.max(0, me.mp / (me.maxMp || 1));
     set('mp', Math.floor(me.mp) + '/' + me.maxMp, (v) => {
-      const b = $('.bar.mp, .bar.scrap', this.hud);
+      const b = $('.brow.mp .bar, .brow.scrap .bar', this.hud);
       $('i.v', b).style.width = mpF * 100 + '%';
-      $('span', b).textContent = (me.resource === 'scrap' ? 'Scrap ' : '') + v;
+      $('span', b).textContent = v;
     });
     const need = xpForLevel(s.level);
     set('xp', s.xp + '/' + need + '/' + s.level, () => {
-      $('.bar.xp i.v', this.hud).style.width = (s.level >= 30 ? 100 : (s.xp / need) * 100) + '%';
-      $('.portrait .lv', this.hud).textContent = s.level;
+      $('.xpbar i', this.hud).style.width = (s.level >= 30 ? 100 : (s.xp / need) * 100) + '%';
+      $('.face .lv', this.hud).textContent = s.level;
     });
-    set('gold', s.gold, (v) => { $('.gold-pill .g', this.hud).textContent = fmt(v); });
+    set('gold', s.gold, (v) => { $('.coins .g', this.hud).textContent = fmt(v); });
     const stx = Object.keys(me.status).map((k) => k + (me.status[k] > 0 ? Math.ceil(me.status[k]) : '')).join(',');
     set('status', stx, () => {
       const names = { poison: ['Poisoned', '#a1d22f'], taunt: ['Taunting', '#ff9a7a'], haste: ['Haste', '#ffd27a'], root: ['Rooted', '#cdeaff'] };
@@ -339,6 +370,7 @@ export class UI {
       const p = me.cds[i] > 0 ? (me.cds[i] / sk.cd) * 100 : 0;
       set('cd' + i, Math.round(p) + (me.mp >= sk.cost ? 'y' : 'n'), () => {
         const b = $(`.act.s${i + 1}`, this.hud);
+        if (!b) return;
         $('.cd', b).style.setProperty('--p', p + '%');
         b.classList.toggle('nores', me.mp < sk.cost);
       });
@@ -349,8 +381,8 @@ export class UI {
     set('vials', vials, (v) => { $('.act.pot .num', this.hud).textContent = v; });
     if (scene.zoneKey === 'dungeon' && scene.combat) {
       const t = scene.combat.runTime;
-      set('rt', Math.floor(t), () => { $('.runbar .tm', this.hud).textContent = `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`; });
-      set('kl', scene.combat.kills, (v) => { $('.runbar .kl', this.hud).innerHTML = `<img src="${icon('skull')}" style="width:14px;height:14px;vertical-align:-3px;image-rendering:pixelated"> ${v}`; });
+      set('rt', Math.floor(t), () => { if (Math.floor(t) % 3 === 0) this.renderTracker(); $('.runinfo .tm', this.hud).textContent = `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`; });
+      set('kl', scene.combat.kills, (v) => { $('.runinfo .kl', this.hud).innerHTML = `<img src="${icon('skull')}"> ${v}`; });
       const b = scene.combat.boss;
       const showBoss = b && b.alive && scene.combat.curRoom === b.room;
       set('bossOn', !!showBoss, (v) => { $('.bossbar', this.hud).classList.toggle('hidden', !v); if (v) { $('.bossbar .bn', this.hud).textContent = b.def.name; $('.bossbar .heads', this.hud).innerHTML = b.heads.map((h) => `<div class="bar"><i class="v"></i><span>${h.name}</span></div>`).join(''); } });
@@ -383,7 +415,8 @@ export class UI {
     zb.classList.add('show');
     clearTimeout(this.zbT);
     this.zbT = setTimeout(() => zb.classList.remove('show'), 3200);
-    $('.runbar', this.hud).classList.toggle('hidden', zone !== 'dungeon');
+    $('.runinfo', this.hud).classList.toggle('hidden', zone !== 'dungeon');
+    setTimeout(() => this.renderTracker(), 50);
     $('.bossbar', this.hud).classList.add('hidden');
     this.setDowned(false);
   }
@@ -442,8 +475,8 @@ export class UI {
 
   levelUp(lv) {
     const el = document.createElement('div');
-    el.className = 'levelup';
-    el.innerHTML = `<div class="t">LEVEL ${lv}!</div><div style="text-shadow:0 2px 0 var(--ink)">Your stats grow stronger</div>`;
+    el.className = 'levelup frame';
+    el.innerHTML = `<img src="${art(G.save.cls, 'happy')}" alt=""><div><div class="t">LEVEL ${lv}!</div><div style="text-shadow:0 2px 0 var(--ink)">Your stats grow stronger</div></div>`;
     document.body.appendChild(el);
     setTimeout(() => { el.style.transition = 'opacity .6s'; el.style.opacity = 0; setTimeout(() => el.remove(), 600); }, 2000);
     net.hello({ name: G.save.name, cls: G.save.cls, lvl: lv, look: G.save.look });
@@ -492,7 +525,7 @@ export class UI {
       blacksmith: ['Open Forge', 'smith'], store: ['Browse Store', 'store'], enchanter: ['Enchant Gear', 'enchanter'],
       tavern: ['Order a Meal', 'tavern'], guild: ['Guild Board', 'guild'], king: ['Royal Decrees', 'king'], advisor: ['Royal Decrees', 'king'],
     }[npc.role];
-    ov.innerHTML = `<div class="dlg frame gold"><div class="face"><canvas width="64" height="64"></canvas></div><div style="flex:1;min-width:0"><div class="who">${esc(npc.name)}</div><div class="txt"></div><div class="acts">${roleBtn ? `<button class="btn gold small" data-a="${roleBtn[1]}">${roleBtn[0]}</button>` : ''}<button class="btn small" data-a="bye">Goodbye</button></div></div></div>`;
+    ov.innerHTML = `<div class="dlg frame"><div class="pf"><canvas width="64" height="64"></canvas></div><div style="flex:1;min-width:0"><div class="who">${esc(npc.name)}</div><div class="txt"></div><div class="acts">${roleBtn ? `<button class="btn gold small" data-a="${roleBtn[1]}">${roleBtn[0]}</button>` : ''}<button class="btn small" data-a="bye">Goodbye</button></div></div></div>`;
     document.body.appendChild(ov);
     const look = npc.look || NPC_LOOKS[npc.id] || NPC_LOOKS.villagerA;
     drawFrame($('canvas', ov), sheetCanvas('npc_' + npc.id, look), 0);
@@ -516,13 +549,23 @@ export class UI {
     if (!this.panel) return;
     this.panel.close();
     this.panel = null;
+    this.setPaused(false);
+  }
+
+  // solo dungeon runs freeze while a menu is open; online play keeps running
+  setPaused(on) {
+    const sc = G.scene;
+    if (!sc || !sc.sys) return;
+    const solo = sc.zoneKey === 'dungeon' && sc.run && !sc.run.online;
+    if (on && solo && sc.sys.isActive()) sc.scene.pause();
+    else if (!on && sc.sys.isPaused()) sc.scene.resume();
   }
 
   confirm(title, html, yes) {
     const ov = document.createElement('div');
     ov.className = 'overlay';
     ov.style.zIndex = 60;
-    ov.innerHTML = `<div class="panel frame gold" style="width:min(420px,100%)"><div class="head"><h3>${esc(title)}</h3></div><div class="body"><div class="note" style="font-size:14px;color:var(--text)">${html}</div></div><div class="foot"><button class="btn small" data-a="no">Cancel</button><button class="btn gold small" data-a="yes">Confirm</button></div></div>`;
+    ov.innerHTML = `<div class="panel frame" style="width:min(420px,100%)"><div class="head"><h3>${esc(title)}</h3></div><div class="body"><div class="note" style="font-size:14px;color:var(--text)">${html}</div></div><div class="foot"><button class="btn small" data-a="no">Cancel</button><button class="btn gold small" data-a="yes">Confirm</button></div></div>`;
     document.body.appendChild(ov);
     ov.addEventListener('click', (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
@@ -538,7 +581,7 @@ export class UI {
     const ov = document.createElement('div');
     ov.className = 'overlay';
     const p = document.createElement('div');
-    p.className = 'panel frame gold corner';
+    p.className = 'panel frame';
     ov.appendChild(p);
     document.body.appendChild(ov);
     G.input.mx = 0; G.input.my = 0;
@@ -556,14 +599,16 @@ export class UI {
       guild: () => this.pGuild(state),
       king: () => this.pKing(state),
       portal: () => this.pPortal(state),
+      pause: () => this.pPause(state),
     };
     const re = () => {
       const res = builders[kind]();
       p.style.width = res.width || '';
-      p.innerHTML = `<div class="head"><h3>${res.icon ? `<img src="${icon(res.icon)}">` : ''}${res.title}</h3>${res.money !== false ? `<div class="money"><span><img class="px" src="${COIN()}">${fmt(G.save?.gold || 0)}</span>${G.save?.ingots ? `<span><img class="px" src="${icon('ingot')}">${G.save.ingots}</span>` : ''}</div>` : ''}<button class="btn x" data-a="close">✕</button></div>${res.tabs ? `<div class="tabs">${res.tabs.map(([k, l]) => `<div class="tab ${state.tab === k ? 'on' : ''}" data-tab="${k}">${l}</div>`).join('')}</div>` : ''}<div class="body">${res.html}</div>${res.foot ? `<div class="foot">${res.foot}</div>` : ''}`;
+      p.innerHTML = `<div class="head"><h3>${res.icon ? `<img src="${icon(res.icon)}">` : ''}${res.title}</h3>${res.money !== false ? `<div class="money"><span><img class="px" src="${COIN()}">${fmt(G.save?.gold || 0)}</span>${G.save?.ingots ? `<span><img class="px" src="${icon('ingot')}">${G.save.ingots}</span>` : ''}</div>` : ''}<button class="btn xbtn" data-a="close">✕</button></div>${res.tabs ? `<div class="tabs">${res.tabs.map(([k, l]) => `<div class="tab ${state.tab === k ? 'on' : ''}" data-tab="${k}">${l}</div>`).join('')}</div>` : ''}<div class="body scroll">${res.html}</div>${res.foot ? `<div class="foot">${res.foot}</div>` : ''}`;
       if (res.after) res.after(p);
     };
     this.panel = { el: ov, kind, re, close: () => ov.remove() };
+    this.setPaused(true);
     if (!state.tab) { const res = builders[kind](); if (res.tabs) state.tab = res.tabs[0][0]; }
     re();
     ov.addEventListener('click', (e) => {
@@ -595,7 +640,7 @@ export class UI {
   }
 
   itemDetail(item, ctx) {
-    if (!item) return `<div class="detail"><div class="note">Tap an item to inspect it.</div></div>`;
+    if (!item) return `<div class="detail sub"><div class="note">Tap an item to inspect it.</div></div>`;
     const s = G.save;
     let st = '', meta = '', acts = '';
     if (item.type === 'gear') {
@@ -621,7 +666,7 @@ export class UI {
       st = `<span>${c.desc}</span>`;
       if (c.kind === 'meal') acts += `<button class="btn gold small" data-a="eat" data-id="${item.id}">Eat${s.meal ? ' (replaces current)' : ''}</button>`;
     }
-    return `<div class="detail"><div class="nm c-${item.rarity || 'common'}">${esc(item.name)}</div><div class="meta">${meta}</div><div class="st">${st}</div><div class="acts">${acts}</div></div>`;
+    return `<div class="detail sub"><div class="nm c-${item.rarity || 'common'}">${esc(item.name)}</div><div class="meta">${meta}</div><div class="st">${st}</div><div class="acts">${acts}</div></div>`;
   }
 
   heroCanvasAfter(p) {
@@ -632,7 +677,7 @@ export class UI {
   pCharacter(state) {
     const s = G.save;
     const C = CLASSES[s.cls];
-    const tabs = [['gear', 'Gear'], ['stats', 'Stats'], ['skills', 'Skills']];
+    const tabs = [['gear', 'Inventory'], ['stats', 'Stats'], ['skills', 'Skill']];
     if (state.tab === 'stats') {
       const st = derive(s.cls, s.level, gearTotals(s), {});
       const gt = gearTotals(s);
@@ -654,8 +699,8 @@ export class UI {
     if (state.tab === 'skills') {
       return {
         title: 'Skills & Mastery', icon: 'star', tabs,
-        html: `<div class="lbl">Active skills</div><div class="list">${C.skills.map((k) => `<div class="li"><img src="${icon(k.icon)}"><div class="grow"><div class="t">${k.name}</div><div class="d">${k.desc}</div></div><div class="price" style="color:${C.resource === 'scrap' ? '#8ff0c6' : '#8fc6ff'}">${k.cost} ${C.resource === 'scrap' ? 'Scrap' : 'MP'} · ${k.cd}s</div></div>`).join('')}
-          <div class="li"><img src="${icon('dash')}"><div class="grow"><div class="t">Dodge Roll</div><div class="d">Roll with invincibility frames. Use it to pass through boss sweeps.</div></div><div class="price">1.1s</div></div></div>
+        html: `<div class="lbl">Active skills</div><div class="list">${C.skills.map((k) => `<div class="li sub"><img src="${icon(k.icon)}"><div class="grow"><div class="t">${k.name}</div><div class="d">${k.desc}</div></div><div class="price" style="color:${C.resource === 'scrap' ? '#8ff0c6' : '#8fc6ff'}">${k.cost} ${C.resource === 'scrap' ? 'Scrap' : 'MP'} · ${k.cd}s</div></div>`).join('')}
+          <div class="li sub"><img src="${icon('dash')}"><div class="grow"><div class="t">Dodge Roll</div><div class="d">Roll with invincibility frames. Use it to pass through boss sweeps.</div></div><div class="price">1.1s</div></div></div>
           <div class="lbl">Specialization paths</div><div class="choice">${C.paths.map((pth) => `<div class="opt"><b style="color:var(--pink)">${pth.name}</b><small>${pth.desc}</small><div class="note">5 tiers · 10 nodes · King's Capstone needs a Mastery Seal</div></div>`).join('')}</div>
           <div class="note">Skill trees open in the next update. You earn 1 skill point per level (30 at max level); investing in Tier 2 of a path locks the other two.</div>`,
       };
@@ -663,14 +708,23 @@ export class UI {
     const sel = state.sel ? this.findItem(state.sel) : null;
     const eq = (slot) => s.equip[slot] ? this.slotHtml(s.equip[slot], state.sel) : `<div class="slot"><img class="ghost" src="${icon(slot === 'weapon' ? CLASS_WEAPON_ICON[s.cls] : SLOT_ICON[slot])}"></div>`;
     return {
-      title: 'Hero', icon: 'bag', tabs,
-      html: `<div class="cols"><div><div class="equipgrid">
-          ${eq('helmet')}<div class="hero"><canvas width="64" height="64"></canvas></div>${eq('weapon')}
+      title: `${esc(s.name)} · Lv ${s.level}`, icon: 'bag', tabs,
+      html: `<div class="cols"><div class="box sub"><div class="equipgrid">
+          ${eq('helmet')}<div class="hero"><img src="${art(s.cls, 'full')}" alt=""></div>${eq('weapon')}
           ${eq('chest')}${eq('greaves')}
           ${eq('boots')}<div class="slot" style="opacity:.6" title="Active meal">${s.meal ? `<img src="${icon(CONSUMABLES[s.meal].icon)}">` : `<img class="ghost" src="${icon('meat')}">`}</div>
         </div>${this.itemDetail(sel?.item, sel || {})}</div>
-        <div><div class="lbl">Bag ${s.bag.length}/${BAG_SIZE}</div><div class="bag">${s.bag.map((it) => this.slotHtml(it, state.sel)).join('')}${Array(Math.max(0, 15 - s.bag.length)).fill('<div class="slot"></div>').join('')}</div></div></div>`,
-      after: (p) => this.heroCanvasAfter(p),
+        <div class="box sub"><div class="lbl" style="margin-top:0">Inventory ${s.bag.length}/${BAG_SIZE}</div><div class="bag">${s.bag.map((it) => this.slotHtml(it, state.sel)).join('')}${Array(Math.max(0, 15 - s.bag.length)).fill('<div class="slot"></div>').join('')}</div></div></div>`,
+    };
+  }
+
+  pPause() {
+    const inDg = G.zone === 'dungeon';
+    const b = (a, ic, label, cls = '') => `<button class="btn ${cls}" data-a="${a}"><img src="${icon(ic)}" alt="">${label}</button>`;
+    return {
+      title: 'Paused', icon: 'pause', money: true,
+      html: `<div class="pausegrid">${b('resume', 'heart', 'Resume', 'gold')}${b('goChar', 'bag', 'Hero & Inventory')}${b('goQuests', 'scroll', 'Quest Log')}${b('goSettings', 'gear', 'Settings')}${b('fullscreen', 'map', 'Fullscreen')}${inDg ? b('leaveRun', 'door', 'Leave Dungeon') : ''}${b('title', 'star', 'Title Screen')}</div>
+        <div class="note" style="margin-top:10px">${G.scene?.run?.online ? 'Party raids keep running while this menu is open.' : 'The game is paused.'}</div>`,
     };
   }
 
@@ -682,7 +736,7 @@ export class UI {
     if (s.crusade) { const c = CRUSADES.find((x) => x.id === s.crusade.id); if (c) rows.push({ q: c, st: s.crusade, kind: "King's Crusade" }); }
     return {
       title: 'Quest Log', icon: 'scroll',
-      html: rows.length ? `<div class="list">${rows.map(({ q, st, kind }) => `<div class="li"><img src="${icon(st.done ? 'star' : 'scroll')}"><div class="grow"><div class="t">${q.name} <small style="color:var(--dim)">· ${kind}</small></div><div class="d">${q.text}</div><div class="prog"><i style="width:${(st.p / q.goal) * 100}%"></i></div></div><div class="price">${st.done ? '<span style="color:var(--good)">Done!</span>' : `${fmt(st.p)}/${fmt(q.goal)}`}</div></div>`).join('')}</div>`
+      html: rows.length ? `<div class="list">${rows.map(({ q, st, kind }) => `<div class="li sub"><img src="${icon(st.done ? 'star' : 'scroll')}"><div class="grow"><div class="t">${q.name} <small style="color:var(--dim)">· ${kind}</small></div><div class="d">${q.text}</div><div class="prog"><i style="width:${(st.p / q.goal) * 100}%"></i></div></div><div class="price">${st.done ? '<span style="color:var(--good)">Done!</span>' : `${fmt(st.p)}/${fmt(q.goal)}`}</div></div>`).join('')}</div>`
         : `<div class="note" style="font-size:14px">No active quests. Visit the <b>Guild Board</b> by the fountain for bounties, or the <b>King</b> in the castle for Royal Decrees.</div>`,
     };
   }
@@ -718,15 +772,15 @@ export class UI {
       return {
         title: "Mira's Village Store", icon: 'coins', tabs,
         html: `<div class="note">Treasures from jars, crates, chests and monsters are worth Gold here.</div>
-          <div class="list">${treasures.map((t) => `<div class="li"><img src="${this.iconFor(t)}"><div class="grow"><div class="t c-${t.rarity}">${esc(t.name)}</div></div><div class="price"><img src="${COIN()}">${fmt(t.value)}</div><button class="btn small" data-a="sell" data-id="${t.id}">Sell</button></div>`).join('') || '<div class="note">No Treasures yet. Smash everything in the dungeon!</div>'}
+          <div class="list">${treasures.map((t) => `<div class="li sub"><img src="${this.iconFor(t)}"><div class="grow"><div class="t c-${t.rarity}">${esc(t.name)}</div></div><div class="price"><img src="${COIN()}">${fmt(t.value)}</div><button class="btn small" data-a="sell" data-id="${t.id}">Sell</button></div>`).join('') || '<div class="note">No Treasures yet. Smash everything in the dungeon!</div>'}
           ${gear.length ? '<div class="lbl">Gear (smelting at the Blacksmith gives Ingots instead)</div>' : ''}
-          ${gear.map((t) => `<div class="li"><img src="${this.iconFor(t)}"><div class="grow"><div class="t c-${t.rarity}">${esc(t.name)}</div><div class="d">${RARITY_NAME[t.rarity]} ${t.slot}</div></div><div class="price"><img src="${COIN()}">${sellValue(t)}</div><button class="btn small" data-a="sell" data-id="${t.id}">Sell</button></div>`).join('')}</div>`,
+          ${gear.map((t) => `<div class="li sub"><img src="${this.iconFor(t)}"><div class="grow"><div class="t c-${t.rarity}">${esc(t.name)}</div><div class="d">${RARITY_NAME[t.rarity]} ${t.slot}</div></div><div class="price"><img src="${COIN()}">${sellValue(t)}</div><button class="btn small" data-a="sell" data-id="${t.id}">Sell</button></div>`).join('')}</div>`,
         foot: treasures.length ? `<button class="btn gold" data-a="sellAll">Sell All Treasures · ${fmt(total)}g</button>` : '',
       };
     }
     return {
       title: "Mira's Village Store", icon: 'coins', tabs,
-      html: `<div class="list">${STORE_STOCK.filter((k) => CONSUMABLES[k].kind !== 'meal').map((k) => { const c = CONSUMABLES[k]; return `<div class="li"><img src="${icon(c.icon)}"><div class="grow"><div class="t">${c.name} <small style="color:var(--dim)">· owned ${countItem(k)}</small></div><div class="d">${c.desc}</div></div><div class="price"><img src="${COIN()}">${c.price}</div><button class="btn small gold" data-a="buy" data-k="${k}" ${s.gold < c.price ? 'disabled' : ''}>Buy</button></div>`; }).join('')}</div>
+      html: `<div class="list">${STORE_STOCK.filter((k) => CONSUMABLES[k].kind !== 'meal').map((k) => { const c = CONSUMABLES[k]; return `<div class="li sub"><img src="${icon(c.icon)}"><div class="grow"><div class="t">${c.name} <small style="color:var(--dim)">· owned ${countItem(k)}</small></div><div class="d">${c.desc}</div></div><div class="price"><img src="${COIN()}">${c.price}</div><button class="btn small gold" data-a="buy" data-k="${k}" ${s.gold < c.price ? 'disabled' : ''}>Buy</button></div>`; }).join('')}</div>
         <div class="note">Two potion slots share a 15s cooldown. Tap the potion button in combat; it uses a Purge Tonic first if you are poisoned.</div>`,
     };
   }
@@ -737,8 +791,8 @@ export class UI {
     return {
       title: "Gus's Tavern", icon: 'meat',
       html: `<div class="note">One meal at a time. It lasts for your next dungeon run and is lost if your party wipes. Current: <b style="color:var(--gold3)">${s.meal ? CONSUMABLES[s.meal].name : 'nothing'}</b></div>
-        <div class="list">${meals.map((k) => { const c = CONSUMABLES[k]; return `<div class="li"><img src="${icon(c.icon)}"><div class="grow"><div class="t">${c.name}</div><div class="d">${c.desc}</div></div><div class="price"><img src="${COIN()}">${c.price}</div><button class="btn small gold" data-a="meal" data-k="${k}" ${s.gold < c.price ? 'disabled' : ''}>Eat</button></div>`; }).join('')}
-        <div class="li"><img src="${icon('feast')}"><div class="grow"><div class="t">The King's Banquet</div><div class="d">Raid feast for a party run: everyone gets +10% to all stats. ${s.banquet ? '<b style="color:var(--good)">Ready for your next party raid!</b>' : ''}</div></div><div class="price"><img src="${COIN()}">1500</div><button class="btn small gold" data-a="banquet" ${s.gold < 1500 || s.banquet ? 'disabled' : ''}>Order</button></div></div>`,
+        <div class="list">${meals.map((k) => { const c = CONSUMABLES[k]; return `<div class="li sub"><img src="${icon(c.icon)}"><div class="grow"><div class="t">${c.name}</div><div class="d">${c.desc}</div></div><div class="price"><img src="${COIN()}">${c.price}</div><button class="btn small gold" data-a="meal" data-k="${k}" ${s.gold < c.price ? 'disabled' : ''}>Eat</button></div>`; }).join('')}
+        <div class="li sub"><img src="${icon('feast')}"><div class="grow"><div class="t">The King's Banquet</div><div class="d">Raid feast for a party run: everyone gets +10% to all stats. ${s.banquet ? '<b style="color:var(--good)">Ready for your next party raid!</b>' : ''}</div></div><div class="price"><img src="${COIN()}">1500</div><button class="btn small gold" data-a="banquet" ${s.gold < 1500 || s.banquet ? 'disabled' : ''}>Order</button></div></div>`,
     };
   }
 
@@ -751,21 +805,21 @@ export class UI {
       return {
         title: "Brann's Forge", icon: 'anvilI', tabs,
         html: `<div class="note">Smelt unwanted Common and Uncommon gear into <b>Forged Ingots</b>, the one universal crafting material. Epic and King's Gold gear is Smelt-Locked for safety.</div>
-          <div class="list">${fodder.map((t) => `<div class="li"><img src="${this.iconFor(t)}"><div class="grow"><div class="t c-${t.rarity}">${esc(t.name)}</div><div class="d">${RARITY_NAME[t.rarity]} ${t.slot} · Lv ${t.level}</div></div><div class="price"><img src="${icon('ingot')}">${t.rarity === 'uncommon' ? 2 : 1}</div><button class="btn small" data-a="smelt" data-id="${t.id}">Smelt</button></div>`).join('') || '<div class="note">Nothing to smelt in your bag.</div>'}</div>`,
+          <div class="list">${fodder.map((t) => `<div class="li sub"><img src="${this.iconFor(t)}"><div class="grow"><div class="t c-${t.rarity}">${esc(t.name)}</div><div class="d">${RARITY_NAME[t.rarity]} ${t.slot} · Lv ${t.level}</div></div><div class="price"><img src="${icon('ingot')}">${t.rarity === 'uncommon' ? 2 : 1}</div><button class="btn small" data-a="smelt" data-id="${t.id}">Smelt</button></div>`).join('') || '<div class="note">Nothing to smelt in your bag.</div>'}</div>`,
         foot: fodder.length ? `<button class="btn gold" data-a="smeltAll">Smelt all (${fodder.reduce((a, b) => a + (b.rarity === 'uncommon' ? 2 : 1), 0)} Ingots)</button>` : '',
       };
     }
     if (state.tab === 'upgrade') {
       return {
         title: "Brann's Forge", icon: 'anvilI', tabs,
-        html: `<div class="note">Each upgrade adds +8% base Attack or Defense without raising the equip level. Max +5.</div><div class="list">${equipped.map((t) => { const g = 80 * (t.up + 1) * (1 + t.level * 0.2), ing = 1 + t.up * 2; return `<div class="li"><img src="${this.iconFor(t)}"><div class="grow"><div class="t c-${t.rarity}">${esc(t.name)} ${t.up ? '+' + t.up : ''}</div><div class="d">${t.atk ? 'ATK ' + t.atk : 'DEF ' + t.def}</div></div><div class="price"><img src="${COIN()}">${Math.round(g)} <img src="${icon('ingot')}">${ing}</div><button class="btn small gold" data-a="upgrade" data-id="${t.id}" ${t.up >= 5 || s.gold < g || s.ingots < ing ? 'disabled' : ''}>${t.up >= 5 ? 'Max' : 'Upgrade'}</button></div>`; }).join('') || '<div class="note">Equip some gear first.</div>'}</div>`,
+        html: `<div class="note">Each upgrade adds +8% base Attack or Defense without raising the equip level. Max +5.</div><div class="list">${equipped.map((t) => { const g = 80 * (t.up + 1) * (1 + t.level * 0.2), ing = 1 + t.up * 2; return `<div class="li sub"><img src="${this.iconFor(t)}"><div class="grow"><div class="t c-${t.rarity}">${esc(t.name)} ${t.up ? '+' + t.up : ''}</div><div class="d">${t.atk ? 'ATK ' + t.atk : 'DEF ' + t.def}</div></div><div class="price"><img src="${COIN()}">${Math.round(g)} <img src="${icon('ingot')}">${ing}</div><button class="btn small gold" data-a="upgrade" data-id="${t.id}" ${t.up >= 5 || s.gold < g || s.ingots < ing ? 'disabled' : ''}>${t.up >= 5 ? 'Max' : 'Upgrade'}</button></div>`; }).join('') || '<div class="note">Equip some gear first.</div>'}</div>`,
       };
     }
     const total = equipped.reduce((a, t) => a + repairCost(t), 0);
     return {
       title: "Brann's Forge", icon: 'anvilI', tabs,
       html: `<div class="note">Gear never breaks for good, but below 50% durability it loses 25% of its stats, and at 0% it is <b>Blunted</b> (-75%, enchants disabled). Party wipes cost 15% durability.</div>
-        <div class="list">${equipped.map((t) => `<div class="li"><img src="${this.iconFor(t)}"><div class="grow"><div class="t c-${t.rarity}">${esc(t.name)}</div><div class="prog"><i style="width:${t.dur}%;background:${t.dur < 50 ? 'var(--warn)' : 'var(--good)'}"></i></div></div><div class="price">${Math.round(t.dur)}%</div><button class="btn small" data-a="repair" data-id="${t.id}" ${t.dur >= 100 || s.gold < repairCost(t) ? 'disabled' : ''}>${repairCost(t)}g</button></div>`).join('')}</div>`,
+        <div class="list">${equipped.map((t) => `<div class="li sub"><img src="${this.iconFor(t)}"><div class="grow"><div class="t c-${t.rarity}">${esc(t.name)}</div><div class="prog"><i style="width:${t.dur}%;background:${t.dur < 50 ? 'var(--warn)' : 'var(--good)'}"></i></div></div><div class="price">${Math.round(t.dur)}%</div><button class="btn small" data-a="repair" data-id="${t.id}" ${t.dur >= 100 || s.gold < repairCost(t) ? 'disabled' : ''}>${repairCost(t)}g</button></div>`).join('')}</div>`,
       foot: `<button class="btn gold" data-a="repairAll" ${!total || s.gold < total ? 'disabled' : ''}>Repair all · ${total}g</button>`,
     };
   }
@@ -781,7 +835,7 @@ export class UI {
       const n = ENCHANT_SLOTS[sel.rarity];
       const cost = Math.round(120 * (1 + ['uncommon', 'rare', 'epic', 'gold'].indexOf(sel.rarity) * 0.8));
       const ing = 2 + sel.locks.filter(Boolean).length;
-      detail = `<div class="lbl">${esc(sel.name)}</div><div class="list">${Array.from({ length: n }, (_, i) => { const pk = pool.find((p) => p.id === (sel.perks || [])[i]); return `<div class="li"><img src="${icon(sel.locks[i] ? 'lock' : 'magic')}"><div class="grow"><div class="t">${pk ? pk.name : '<span style="color:var(--dim)">Empty slot</span>'}</div><div class="d">${pk ? pk.text : 'Roll to imbue a perk'}</div></div>${pk ? `<div class="chip ${sel.locks[i] ? 'on' : ''}" data-a="lock" data-id="${sel.id}" data-i="${i}">${sel.locks[i] ? 'Locked' : 'Lock (+1 ingot)'}</div>` : ''}</div>`; }).join('')}</div>
+      detail = `<div class="lbl">${esc(sel.name)}</div><div class="list">${Array.from({ length: n }, (_, i) => { const pk = pool.find((p) => p.id === (sel.perks || [])[i]); return `<div class="li sub"><img src="${icon(sel.locks[i] ? 'lock' : 'magic')}"><div class="grow"><div class="t">${pk ? pk.name : '<span style="color:var(--dim)">Empty slot</span>'}</div><div class="d">${pk ? pk.text : 'Roll to imbue a perk'}</div></div>${pk ? `<div class="chip ${sel.locks[i] ? 'on' : ''}" data-a="lock" data-id="${sel.id}" data-i="${i}">${sel.locks[i] ? 'Locked' : 'Lock (+1 ingot)'}</div>` : ''}</div>`; }).join('')}</div>
         <div class="row" style="margin-top:10px;justify-content:flex-end"><span class="money"><span><img src="${COIN()}">${cost}</span><span><img src="${icon('ingot')}">${ing}</span></span><button class="btn pink" data-a="roll" data-id="${sel.id}" ${s.gold < cost || s.ingots < ing ? 'disabled' : ''}>Roll Perks</button></div>`;
     }
     return {
@@ -796,7 +850,7 @@ export class UI {
     return {
       title: 'Guild Board', icon: 'scroll',
       html: `<div class="note">Take up to 3 bounties at a time. Party up at the <b>Dungeon Portal</b> by sharing a Room Code with friends.</div>
-        <div class="list">${BOUNTIES.map((b) => { const st = s.bounties[b.id]; let btn; if (!st || st.claimed) btn = `<button class="btn small gold" data-a="accept" data-id="${b.id}" ${active >= 3 ? 'disabled' : ''}>Accept</button>`; else if (st.done) btn = `<button class="btn small pink" data-a="claim" data-id="${b.id}">Claim</button>`; else btn = `<span class="price">${st.p}/${b.goal}</span>`; return `<div class="li"><img src="${icon(st?.done ? 'star' : 'scroll')}"><div class="grow"><div class="t">${b.name}</div><div class="d">${b.text} · <span style="color:var(--gold3)">${b.gold}g</span> · ${b.xp} XP</div>${st && !st.claimed ? `<div class="prog"><i style="width:${(st.p / b.goal) * 100}%"></i></div>` : ''}</div>${btn}</div>`; }).join('')}</div>`,
+        <div class="list">${BOUNTIES.map((b) => { const st = s.bounties[b.id]; let btn; if (!st || st.claimed) btn = `<button class="btn small gold" data-a="accept" data-id="${b.id}" ${active >= 3 ? 'disabled' : ''}>Accept</button>`; else if (st.done) btn = `<button class="btn small pink" data-a="claim" data-id="${b.id}">Claim</button>`; else btn = `<span class="price">${st.p}/${b.goal}</span>`; return `<div class="li sub"><img src="${icon(st?.done ? 'star' : 'scroll')}"><div class="grow"><div class="t">${b.name}</div><div class="d">${b.text} · <span style="color:var(--gold3)">${b.gold}g</span> · ${b.xp} XP</div>${st && !st.claimed ? `<div class="prog"><i style="width:${(st.p / b.goal) * 100}%"></i></div>` : ''}</div>${btn}</div>`; }).join('')}</div>`,
     };
   }
 
@@ -807,9 +861,9 @@ export class UI {
       title: "King's Castle", icon: 'crown',
       html: `<div class="note">You hold one <b>Solo Slot</b> (Royal Decree) and one <b>Party Slot</b> (King's Crusade). Decrees reward Mastery Seals, needed for Tier-5 King's Capstones. Seals: <b style="color:var(--gold3)">${s.seals}</b></div>
         <div class="lbl">Royal Decrees · solo</div>
-        <div class="list">${DECREES.map((d) => { const st = s.decrees[d.id]; let btn; if (!st || st.claimed) btn = `<button class="btn small gold" data-a="decree" data-id="${d.id}" ${decreeActive ? 'disabled' : ''}>Accept</button>`; else if (st.done) btn = `<button class="btn small pink" data-a="claimDecree" data-id="${d.id}">Claim</button>`; else btn = `<span class="price">${fmt(st.p)}/${fmt(d.goal)}</span>`; return `<div class="li"><img src="${icon('crown')}"><div class="grow"><div class="t">${d.name}</div><div class="d">${d.text} · ${fmt(d.gold)}g · ${d.ingots} Ingots · Mastery Seal</div>${st && !st.claimed ? `<div class="prog"><i style="width:${(st.p / d.goal) * 100}%"></i></div>` : ''}</div>${btn}</div>`; }).join('')}</div>
+        <div class="list">${DECREES.map((d) => { const st = s.decrees[d.id]; let btn; if (!st || st.claimed) btn = `<button class="btn small gold" data-a="decree" data-id="${d.id}" ${decreeActive ? 'disabled' : ''}>Accept</button>`; else if (st.done) btn = `<button class="btn small pink" data-a="claimDecree" data-id="${d.id}">Claim</button>`; else btn = `<span class="price">${fmt(st.p)}/${fmt(d.goal)}</span>`; return `<div class="li sub"><img src="${icon('crown')}"><div class="grow"><div class="t">${d.name}</div><div class="d">${d.text} · ${fmt(d.gold)}g · ${d.ingots} Ingots · Mastery Seal</div>${st && !st.claimed ? `<div class="prog"><i style="width:${(st.p / d.goal) * 100}%"></i></div>` : ''}</div>${btn}</div>`; }).join('')}</div>
         <div class="lbl">King's Crusade · party</div>
-        <div class="list">${CRUSADES.map((c) => { const st = s.crusade && s.crusade.id === c.id ? s.crusade : null; let btn; if (!st) btn = `<button class="btn small gold" data-a="crusade" data-id="${c.id}" ${s.crusade && !s.crusade.claimed ? 'disabled' : ''}>Accept</button>`; else if (st.done && !st.claimed) btn = `<button class="btn small pink" data-a="claimCrusade">Claim</button>`; else btn = `<span class="price">${fmt(st.p)}/${fmt(c.goal)}</span>`; return `<div class="li"><img src="${icon('scepter')}"><div class="grow"><div class="t">${c.name}</div><div class="d">${c.text} Kills by any teammate in your dungeon count. · ${fmt(c.gold)}g · ${c.ingots} Ingots · double XP</div>${st ? `<div class="prog"><i style="width:${(st.p / c.goal) * 100}%"></i></div>` : ''}</div>${btn}</div>`; }).join('')}</div>`,
+        <div class="list">${CRUSADES.map((c) => { const st = s.crusade && s.crusade.id === c.id ? s.crusade : null; let btn; if (!st) btn = `<button class="btn small gold" data-a="crusade" data-id="${c.id}" ${s.crusade && !s.crusade.claimed ? 'disabled' : ''}>Accept</button>`; else if (st.done && !st.claimed) btn = `<button class="btn small pink" data-a="claimCrusade">Claim</button>`; else btn = `<span class="price">${fmt(st.p)}/${fmt(c.goal)}</span>`; return `<div class="li sub"><img src="${icon('scepter')}"><div class="grow"><div class="t">${c.name}</div><div class="d">${c.text} Kills by any teammate in your dungeon count. · ${fmt(c.gold)}g · ${c.ingots} Ingots · double XP</div>${st ? `<div class="prog"><i style="width:${(st.p / c.goal) * 100}%"></i></div>` : ''}</div>${btn}</div>`; }).join('')}</div>`,
     };
   }
 
@@ -819,13 +873,13 @@ export class UI {
     state.diff = state.diff || 'normal';
     const party = G.party;
     const isHost = party && party.host === net.id;
-    const dungeons = Object.entries(DUNGEONS).map(([k, d]) => `<div class="opt ${state.dg === k ? 'on' : ''} ${d.unlocked ? '' : 'lock'}" data-a="pickDg" data-k="${k}"><b>${d.name}</b><small>${d.unlocked ? 'Snakes, mandrakes, tortoises · Boss: Three-Headed Snake' : 'Coming in a future update'}</small></div>`).join('');
-    const diffs = Object.entries(DIFFICULTY).map(([k, d]) => `<div class="opt ${state.diff === k ? 'on' : ''} ${s.level >= d.minLevel ? '' : 'lock'}" data-a="pickDiff" data-k="${k}"><b>${d.name}</b><small>${s.level >= d.minLevel ? `Enemy HP x${d.hp}` : 'Requires Lv ' + d.minLevel}</small></div>`).join('');
+    const dungeons = Object.entries(DUNGEONS).map(([k, d]) => `<div class="opt sub ${state.dg === k ? 'on' : ''} ${d.unlocked ? '' : 'lock'}" data-a="pickDg" data-k="${k}"><b>${d.name}</b><small>${d.unlocked ? 'Snakes, mandrakes, tortoises · Boss: Three-Headed Snake' : 'Coming in a future update'}</small></div>`).join('');
+    const diffs = Object.entries(DIFFICULTY).map(([k, d]) => `<div class="opt sub ${state.diff === k ? 'on' : ''} ${s.level >= d.minLevel ? '' : 'lock'}" data-a="pickDiff" data-k="${k}"><b>${d.name}</b><small>${s.level >= d.minLevel ? `Enemy HP x${d.hp}` : 'Requires Lv ' + d.minLevel}</small></div>`).join('');
     let partyHtml;
     if (!G.online) partyHtml = `<div class="note">You are offline, so raids are solo. Set up the multiplayer server in <b>Settings</b> to party up with friends.</div>`;
     else if (!party || !party.code) partyHtml = `<div class="row"><button class="btn gold" data-a="pcreate">Create Party</button><input class="field" data-k="code" maxlength="4" placeholder="CODE" style="width:110px;text-transform:uppercase;text-align:center;letter-spacing:4px"><button class="btn" data-a="pjoin">Join</button></div><div class="note">Share your 4-letter Room Code with friends. Up to 10 heroes per raid; enemies scale with party size.</div>`;
     else partyHtml = `<div class="row" style="align-items:stretch"><div class="code" style="flex:1">${party.code}</div><button class="btn small ghost" data-a="pleave">Leave</button></div>
-        <div class="members">${party.members.map((m) => `<div class="member"><img src="${icon(CLASS_ICON[m.cls] || 'sword')}"><div><div>${esc(m.name)}</div><div class="host">${m.id === party.host ? '★ host' : 'Lv ' + (m.lvl || 1)}</div></div></div>`).join('')}</div>
+        <div class="members">${party.members.map((m) => `<div class="member sub"><img src="${art(m.cls || 'warrior')}"><div><div>${esc(m.name)}</div><div class="host">${m.id === party.host ? '★ host' : 'Lv ' + (m.lvl || 1)}</div></div></div>`).join('')}</div>
         <div class="note">${isHost ? 'You are the host. Start when everyone is in.' : 'Waiting for the host to open the portal…'}</div>`;
     return {
       title: 'Dungeon Portal', icon: 'map',
@@ -948,6 +1002,13 @@ export class UI {
         s.gold += c.gold; s.ingots += c.ingots; s.crusade = null; sfx.epic(); this.toast('Crusade rewards claimed!', 'gold'); save();
         break;
       }
+      case 'resume': this.closePanel(); break;
+      case 'goChar': this.openPanel('character'); break;
+      case 'goQuests': this.openPanel('quests'); break;
+      case 'goSettings': this.openPanel('settings'); break;
+      case 'fullscreen': goFullscreen(); break;
+      case 'leaveRun': this.closePanel(); this.confirm('Leave the dungeon?', 'You keep what you picked up, but the run ends.', () => G.scene && G.scene.combat.endRun('leave')); break;
+      case 'title': save(); location.reload(); break;
       case 'pickDg': state.dg = d.k; break;
       case 'pickDiff': state.diff = d.k; break;
       case 'pcreate': net.send({ t: 'pcreate' }); break;
@@ -1014,8 +1075,8 @@ export class UI {
     const win = sum.reason === 'victory';
     const title = win ? 'VICTORY!' : sum.reason === 'wipe' ? 'PARTY WIPED' : 'RETREAT';
     const sub = win ? `${sum.dungeon} cleared` : sum.reason === 'wipe' ? 'You keep XP, Gold and loot, but equipped gear lost 15% durability.' : 'You escaped with your loot.';
-    ov.innerHTML = `<div class="panel frame gold corner result ${win ? '' : 'wipe'}" style="width:min(560px,100%)"><div class="body"><div class="big">${title}</div><div class="note" style="text-align:center">${sub}</div>
-      <div class="sum"><div><b>${Math.floor(sum.time / 60)}:${String(Math.floor(sum.time % 60)).padStart(2, '0')}</b>Time</div><div><b>${sum.kills}</b>Kills</div><div><b>${sum.loot.length}</b>Loot</div></div>
+    ov.innerHTML = `<div class="panel frame result ${win ? '' : 'wipe'}" style="width:min(560px,100%)"><div class="body scroll"><div class="hero"><img src="${art(G.save.cls, win ? 'happy' : 'shock')}" alt=""></div><div class="big">${title}</div><div class="note" style="text-align:center">${sub}</div>
+      <div class="sum"><div class="sub"><b>${Math.floor(sum.time / 60)}:${String(Math.floor(sum.time % 60)).padStart(2, '0')}</b>Time</div><div class="sub"><b>${sum.kills}</b>Kills</div><div class="sub"><b>${sum.loot.length}</b>Loot</div></div>
       <div class="bag">${sum.loot.map((it) => this.slotHtml(it, null)).join('')}</div></div><div class="foot"><button class="btn gold" data-a="ok">Return to Village</button></div></div>`;
     document.body.appendChild(ov);
     this.panel = { el: ov, close: () => ov.remove() };

@@ -14,7 +14,7 @@ K and L skills, Shift dodge, Q potion, E interact, I hero panel, Enter chat.
 
 ## What is in v0.1
 
-- **5 classes** from the design guide: Warrior, Mage, Savage, Gunman, Engineer (Scrap resource),
+- **5 heroes** based on the character sheets: Hero (Warrior), Mage, Hunter, Gunman, Engineer (Scrap resource),
   with the guide's 100-point attribute spreads, 2 active skills each plus dodge
 - **Brightheart Village** hub: Village Store and Market Counter (Sell All Treasures), Blacksmith
   (repair, smelt into Forged Ingots, upgrade), Enchanter (roll and lock perks), Tavern meals and

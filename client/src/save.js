@@ -14,7 +14,7 @@ export function saveSettings(s) { try { localStorage.setItem(SETTINGS, JSON.stri
 
 export function newCharacter(name, cls, look) {
   const starter = makeGear({ slot: 'weapon', cls, level: 1, rarity: 'common' });
-  starter.name = { warrior: 'Squire Blade', mage: 'Apprentice Staff', savage: 'Woodcutter Axe', gunman: 'Old Musket', engineer: 'Trusty Wrench' }[cls];
+  starter.name = { warrior: 'Squire Blade', mage: 'Apprentice Staff', savage: 'Hunting Bow', gunman: 'Old Revolver', engineer: 'Trusty Wrench' }[cls];
   const boots = makeGear({ slot: 'boots', cls, level: 1, rarity: 'common' });
   return {
     v: 1, name, cls, look,

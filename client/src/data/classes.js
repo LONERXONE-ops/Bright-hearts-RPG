@@ -12,7 +12,7 @@ export const ATTR_INFO = {
 
 export const CLASSES = {
   warrior: {
-    name: 'Warrior', archetype: 'Vanguard', role: 'Flank Exploiter',
+    name: 'Warrior', title: 'Hero', tagline: 'The brave boy on a journey to save the world.', archetype: 'Vanguard', role: 'Flank Exploiter',
     blurb: 'Fast, agile close-range melee with minor spells. Hit enemies from behind to Sunder their armor.',
     base: { vitality: 20, armor: 15, might: 25, agility: 25, spirit: 10, presence: 5 },
     resource: 'mana', weapon: 'Blade', range: 1.25, melee: true, atkSpeed: 0.38,
@@ -27,7 +27,7 @@ export const CLASSES = {
     ],
   },
   mage: {
-    name: 'Mage', archetype: 'Arcanist', role: 'Sustain Engine',
+    name: 'Mage', title: 'Mage', tagline: 'A young mage with a kind heart.', archetype: 'Arcanist', role: 'Sustain Engine',
     blurb: 'Slow, long-range magic and party support. Heals, cleanses and revives from range.',
     base: { vitality: 10, armor: 5, might: 5, agility: 10, spirit: 45, presence: 25 },
     resource: 'mana', weapon: 'Staff', range: 6, melee: false, atkSpeed: 0.55,
@@ -42,25 +42,25 @@ export const CLASSES = {
     ],
   },
   savage: {
-    name: 'Savage', archetype: 'Juggernaut', role: 'Aggro Anchor',
-    blurb: 'Slow, high-HP tank and heavy bruiser. Taunts bosses and shields the party.',
+    name: 'Hunter', title: 'Hunter', tagline: 'A wild soul with a bow.', archetype: 'Beast Warden', role: 'Aggro Anchor',
+    blurb: 'Tough as the frozen north. Holds the boss\'s attention with war cries while her arrows rain from range.',
     base: { vitality: 30, armor: 25, might: 20, agility: 10, spirit: 5, presence: 10 },
-    resource: 'mana', weapon: 'Greataxe', range: 1.4, melee: true, atkSpeed: 0.62,
+    resource: 'mana', weapon: 'Longbow', range: 6, melee: false, atkSpeed: 0.5,
     paths: [
-      { name: 'Guardian', desc: 'Boss taunts, projectile shields and ally damage absorption.' },
-      { name: 'Juggernaut', desc: 'Two-handed slams, crowd stuns and armor shattering.' },
-      { name: 'Berserker', desc: 'Gains speed and life-steal as HP falls.' },
+      { name: 'Warden', desc: 'Boss taunts, damage absorption and shields for the party.' },
+      { name: 'Beastmaster', desc: 'Wolf and hawk companions that fight beside her.' },
+      { name: 'Berserker', desc: 'Faster arrows and life-steal as HP falls.' },
     ],
     skills: [
-      { id: 'taunt', name: 'War Taunt', icon: 'shield', cost: 12, cd: 8, desc: 'Pull aggro and take 50% less damage for 5s.' },
-      { id: 'slam', name: 'Earth Slam', icon: 'slam', cost: 18, cd: 6, desc: 'Smash the ground, stunning nearby enemies.' },
+      { id: 'taunt', name: 'War Cry', icon: 'shield', cost: 12, cd: 8, desc: 'Pull aggro and take 50% less damage for 5s.' },
+      { id: 'volley', name: 'Arrow Rain', icon: 'volley', cost: 18, cd: 6, desc: 'Rain arrows on an area.' },
     ],
   },
   gunman: {
-    name: 'Gunman', archetype: 'Ranger', role: 'Weak-Point Interrupter',
-    blurb: 'Mid-to-long range physical DPS. Snipes weak points and lays down explosives.',
+    name: 'Gunman', title: 'Gunman', tagline: 'A lone traveler with a trusty gun.', archetype: 'Ranger', role: 'Weak-Point Interrupter',
+    blurb: 'Mid-to-long range gunslinger. Snipes boss weak points and lays down explosives.',
     base: { vitality: 15, armor: 10, might: 25, agility: 30, spirit: 10, presence: 10 },
-    resource: 'mana', weapon: 'Rifle', range: 7, melee: false, atkSpeed: 0.42,
+    resource: 'mana', weapon: 'Revolver', range: 7, melee: false, atkSpeed: 0.42,
     paths: [
       { name: 'Sharpshooter', desc: 'Defense-piercing rifles and boss weak-point sniping.' },
       { name: 'Gunslinger', desc: 'Fast dual pistols, dodge-rolls and rapid barrages.' },
@@ -72,7 +72,7 @@ export const CLASSES = {
     ],
   },
   engineer: {
-    name: 'Engineer', archetype: 'Tactician', role: 'Mechanical Support',
+    name: 'Engineer', title: 'Engineer', tagline: 'A clever mind that builds the future.', archetype: 'Tactician', role: 'Mechanical Support',
     blurb: 'Battlefield tactician. Spends Scrap to deploy sentries and snares. Smash crates for Scrap.',
     // The guide gives no numbers for the Engineer, so this 100 point spread is a balanced starting point.
     base: { vitality: 15, armor: 15, might: 15, agility: 20, spirit: 15, presence: 20 },

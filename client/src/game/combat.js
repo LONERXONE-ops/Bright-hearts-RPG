@@ -174,9 +174,10 @@ export class Combat {
       this.meleeHit(me, cls.range, 1.3, dmg, { crit, poise: me.cls === 'savage' ? 30 : 12, kb: me.cls === 'savage' ? 0.6 : 0.3 });
       this.netFx({ k: 'slash', x: me.x + dir.x * 0.6, y: me.y + dir.y * 0.6, f: me.face.x < 0 ? 1 : 0 });
     } else {
-      const kind = { mage: 'magic', gunman: 'bullet', engineer: 'wrench' }[me.cls];
-      if (kind === 'bullet') sfx.shoot(); else sfx.magic();
-      const proj = { x: me.x + dir.x * 0.4, y: me.y + dir.y * 0.4, dx: dir.x, dy: dir.y, speed: kind === 'bullet' ? 14 : 9, range: cls.range + 1, dmg, crit, owner: 'me', tex: kind === 'bullet' ? 'bullet' : 'orb_' + kind, light: kind === 'magic' };
+      const kind = { mage: 'magic', gunman: 'bullet', engineer: 'wrench', savage: 'arrow' }[me.cls];
+      if (kind === 'bullet') sfx.shoot(); else if (kind === 'arrow') sfx.swing(); else sfx.magic();
+      const flat = kind === 'bullet' || kind === 'arrow';
+      const proj = { x: me.x + dir.x * 0.4, y: me.y + dir.y * 0.4, dx: dir.x, dy: dir.y, speed: flat ? 14 : 9, range: cls.range + 1, dmg, crit, owner: 'me', tex: flat ? kind : 'orb_' + kind, light: kind === 'magic' };
       this.spawnProj(proj);
       this.netFx({ k: 'proj', x: proj.x, y: proj.y, dx: dir.x, dy: dir.y, sp: proj.speed, r: proj.range, tex: proj.tex });
     }
@@ -254,6 +255,13 @@ export class Combat {
         this.healMe(amt);
         this.ring(me.x, me.y, 'ring_heal');
         net.ev({ k: 'heal', x: me.x, y: me.y, r: 4.5, a: amt });
+        break;
+      }
+      case 'volley': {
+        sfx.swing();
+        const tx = tgt ? tgt.x : me.x + dir.x * 3, ty = tgt ? tgt.y : me.y + dir.y * 3;
+        this.storm(tx, ty, me.stats.atk * 0.8 * cm, true, 'arrow');
+        this.netFx({ k: 'storm', x: tx, y: ty, a: 'arrow' });
         break;
       }
       case 'taunt': {
@@ -1037,7 +1045,7 @@ export class Combat {
     const S = this.s;
     const p = iso(o.x, o.y);
     o.img = S.add.image(p.x, p.y - 10, o.tex).setScale(o.scale || 1);
-    if (o.tex === 'bullet') o.img.setRotation(Math.atan2((o.dx + o.dy) * 8, (o.dx - o.dy) * 16));
+    if (o.tex === 'bullet' || o.tex === 'arrow') o.img.setRotation(Math.atan2((o.dx + o.dy) * 8, (o.dx - o.dy) * 16));
     if (o.light || o.tex.startsWith('orb')) o.img.setBlendMode(Phaser.BlendModes.ADD);
     o.dist = 0;
     o.hit = new Set();
@@ -1081,7 +1089,8 @@ export class Combat {
 
   lob(x0, y0, x1, y1, tex, dur, done) {
     const S = this.s;
-    const img = S.add.image(0, 0, tex).setDepth(95000).setBlendMode(Phaser.BlendModes.ADD);
+    const img = S.add.image(0, 0, tex).setDepth(95000);
+    if (tex === 'arrow') img.setRotation(Math.PI / 2); else img.setBlendMode(Phaser.BlendModes.ADD);
     const o = { t: 0 };
     S.tweens.add({
       targets: o, t: 1, duration: dur * 1000,
@@ -1103,14 +1112,15 @@ export class Combat {
     for (const b of [...(this.s.breakables?.values() || [])]) if (Math.hypot(b.x - x, b.y - y) < r) this.hitBreakable(b);
   }
 
-  storm(x, y, dmg, mine) {
+  storm(x, y, dmg, mine, kind = 'fire') {
     const S = this.s;
-    for (let k = 0; k < 7; k++) {
-      S.time.delayedCall(150 + k * 160, () => {
+    const arrows = kind === 'arrow';
+    for (let k = 0; k < (arrows ? 10 : 7); k++) {
+      S.time.delayedCall(150 + k * (arrows ? 90 : 160), () => {
         const px = x + rand(-1.3, 1.3), py = y + rand(-1.3, 1.3);
-        this.lob(px - 0.4, py - 1.6, px, py, 'orb_fire', 0.22, () => {
-          this.puff(px, py, 'puff_fire', 1.1);
-          sfx.boom();
+        this.lob(px - 0.4, py - 1.6, px, py, arrows ? 'arrow' : 'orb_fire', arrows ? 0.18 : 0.22, () => {
+          this.puff(px, py, arrows ? 'puff_dust' : 'puff_fire', arrows ? 0.6 : 1.1);
+          if (arrows) sfx.hit(); else sfx.boom();
           if (!mine) return;
           for (const t of this.targets()) if (Math.hypot(t.x - px, t.y - py) < 1.1 + t.r) this.damageTarget(t, dmg, { aoe: true, from: this.me });
           for (const b of [...(S.breakables?.values() || [])]) if (Math.hypot(b.x - px, b.y - py) < 1) this.hitBreakable(b);
@@ -1293,7 +1303,7 @@ export class Combat {
         const f = e.f;
         if (f.k === 'slash') this.slashFx(f.x, f.y, !!f.f);
         else if (f.k === 'proj') this.spawnProj({ x: f.x, y: f.y, dx: f.dx, dy: f.dy, speed: f.sp, range: f.r, dmg: 0, owner: 'remote', tex: f.tex, light: true });
-        else if (f.k === 'storm') this.storm(f.x, f.y, 0, false);
+        else if (f.k === 'storm') this.storm(f.x, f.y, 0, false, f.a || 'fire');
         else if (f.k === 'ring') this.ring(f.x, f.y, f.a);
         else if (f.k === 'lob') this.lob(f.x, f.y, f.tx, f.ty, 'orb_venom', 0.55, () => { this.puff(f.tx, f.ty, 'puff_fire', 1.6); sfx.boom(); });
         else if (f.k === 'dev') this.addDevice(f.d, f.x, f.y, false);

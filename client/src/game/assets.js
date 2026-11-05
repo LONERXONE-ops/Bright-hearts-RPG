@@ -41,7 +41,8 @@ export function ensureHuman(scene, key, look) {
 }
 
 export function playerKey(cls, look) {
-  return `pc_${cls}_${look.hair || 'brown'}_${look.style || 'spiky'}_${look.skin | 0}`;
+  void look;
+  return `pc_${cls}`;
 }
 export function ensurePlayerSprite(scene, cls, look) {
   return ensureHuman(scene, playerKey(cls, look), lookFor(cls, look));
@@ -113,6 +114,7 @@ export function buildAll(scene, lowFx) {
   addImg(scene, 'orb_beam', FX.orb(R.ice, 5));
   addImg(scene, 'orb_wrench', FX.orb(R.steel, 3));
   addImg(scene, 'bullet', FX.bullet());
+  addImg(scene, 'arrow', FX.arrow());
   addSheet(scene, 'puff_fire', strip([0, 1, 2, 3, 4].map((f) => FX.puff(f, R.fire))), 32, 32);
   addSheet(scene, 'puff_dust', strip([0, 1, 2, 3, 4].map((f) => FX.puff(f, R.bone))), 32, 32);
   addSheet(scene, 'puff_venom', strip([0, 1, 2, 3, 4].map((f) => FX.puff(f, R.toxic))), 32, 32);
