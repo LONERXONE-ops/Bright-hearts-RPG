@@ -6,6 +6,29 @@ import * as P from '../art/props.js';
 import * as FX from '../art/fx.js';
 import { strip } from '../art/pix.js';
 import { R } from '../art/palette.js';
+import { sideSheet, SIDE_POSES, FS } from '../art/sidechars.js';
+import * as SD from '../art/side.js';
+
+export const PACK = ['turret', 'snare', 'jar', 'totem', 'sphere', 'guardian', 'banner', 'npc_warrior', 'npc_mage', 'npc_gunman', 'npc_engineer', 'npc_savage'];
+export function preloadPack(scene) { for (const k of PACK) scene.load.image('pk_' + k, './art/pack/' + k + '.png'); }
+
+// side-view hero sheet (pack-style class sprites)
+export function ensureHeroSide(scene, cls) {
+  const key = 'hs_' + cls;
+  if (scene.textures.exists(key)) return key;
+  addSheet(scene, key, sideSheet(cls), FS, FS);
+  const A = scene.anims;
+  const f = (n) => SIDE_POSES.indexOf(n);
+  const mk = (name, frames, rate, rep) => A.create({ key: `${key}_${name}`, frames: frames.map((n) => ({ key, frame: f(n) })), frameRate: rate, repeat: rep });
+  mk('idle', ['idle0', 'idle1'], 2.4, -1);
+  mk('run', ['run0', 'run1', 'run2', 'run3'], 11, -1);
+  mk('atk', ['atk0', 'atk1', 'atk1'], 14, 0);
+  mk('cast', ['cast', 'atk1'], 10, 0);
+  mk('jump', ['jump'], 1, 0);
+  mk('fall', ['fall'], 1, 0);
+  mk('hurt', ['hurt'], 1, 0);
+  return key;
+}
 
 export function addSheet(scene, key, pix, fw, fh) {
   const tex = scene.textures;
@@ -79,8 +102,23 @@ export function buildAll(scene, lowFx) {
     addProp(scene, 'crate_' + i, P.crate(i + 1, R.plank, true));
   }
   addProp(scene, 'cpillar_0', P.pillar(1, false, R.castle, false));
-  addProp(scene, 'chest_c', P.chest(false));
-  addProp(scene, 'chest_o', P.chest(true));
+  addProp(scene, 'chest_c', SD.chestSide(false));
+  addProp(scene, 'chest_o', SD.chestSide(true));
+  addProp(scene, 'crate_side', SD.crateSide(1));
+  for (let f = 0; f < 4; f++) addProp(scene, 'fountain_' + f, SD.fountainSide(f));
+  addProp(scene, 'stall_side', SD.stallSide(R.red));
+  addProp(scene, 'fence_side', SD.fenceSide());
+  for (let i = 0; i < 3; i++) addProp(scene, 'rubble_' + i, SD.rubble(i + 1));
+  addProp(scene, 'door_side', SD.facade({ w: 2, h: 3, wall: 'castle', windows: 0 }, 2));
+  addImg(scene, 'seal_0', SD.sealGate(0)); addImg(scene, 'seal_1', SD.sealGate(1));
+  { const pd = FX.puddle(0); addImg(scene, 'puddle_side_src', pd); }
+  { // flat side-view puddle strip
+    const c = document.createElement('canvas'); c.width = 32; c.height = 6; const g = c.getContext('2d');
+    g.fillStyle = 'rgba(61,122,30,.9)'; g.fillRect(0, 2, 32, 4); g.fillStyle = 'rgba(161,210,47,.95)'; g.fillRect(2, 1, 28, 2); g.fillStyle = '#dcf56b'; for (let i = 3; i < 30; i += 7) g.fillRect(i, 1, 2, 1);
+    if (!scene.textures.exists('puddle_side')) scene.textures.addCanvas('puddle_side', c);
+  }
+  anchors.puddle_side = { x: 0.5, y: 1 };
+  for (const k of PACK) if (scene.textures.exists('pk_' + k)) anchors['pk_' + k] = { x: 0.5, y: 1 };
   addProp(scene, 'barrel', P.barrel());
   addProp(scene, 'brazier', P.torchPost('brazier', R.ruin));
   addProp(scene, 'lamp', P.torchPost('lamp'));
@@ -95,7 +133,7 @@ export function buildAll(scene, lowFx) {
   addProp(scene, 'candelabra', P.candelabra());
   addProp(scene, 'wbanner_crown', P.wallBanner(R.red, 'crown'));
   addProp(scene, 'wbanner_heart', P.wallBanner(R.red, 'heart'));
-  addProp(scene, 'glass', P.stainedGlass());
+  addProp(scene, 'glass', SD.windowGlow());
   addProp(scene, 'rack', P.weaponRack());
   for (let f = 0; f < 4; f++) { addProp(scene, 'portal_' + f, P.portal(f)); }
   addSheet(scene, 'flame', strip([0, 1, 2, 3].map((f) => P.flame(f))), 12, 16);

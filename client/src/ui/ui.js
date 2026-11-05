@@ -224,6 +224,7 @@ export class UI {
       <div class="topright">
         <div class="rowx">
           <div class="coins glass"><img class="px" src="${COIN()}"><span class="g">0</span></div>
+          <button class="btn sqbtn pe" data-a="chat" title="Chat"><img src="${icon('chat')}" alt="Chat"></button>
           <button class="btn sqbtn pe" data-a="character" title="Hero"><img src="${icon('bag')}" alt="Hero"></button>
           <button class="btn questbtn pe" data-a="tracker">Quest <span class="car">▼</span><img src="${icon('scroll')}" alt=""></button>
         </div>
@@ -236,12 +237,12 @@ export class UI {
       <div id="chatlog"></div>
       <div id="stick"><svg class="arrows" viewBox="0 0 100 100"><path d="M50 4 L57 13 L43 13Z M50 96 L57 87 L43 87Z M4 50 L13 43 L13 57Z M96 50 L87 43 L87 57Z" fill="#fff"/></svg><div class="knob"></div></div>
       <div id="actions">
-        <div class="act" data-act="chat"><img src="${icon('chat')}" alt="Chat"></div>
-        <div class="act big" data-act="atk"><img src="${icon(CLASS_ICON[s.cls])}" alt="Attack"></div>
         <div class="act s1" data-act="s0"><img src="${icon(C.skills[0].icon)}" alt=""><div class="cd"></div><div class="cost ${res === 'scrap' ? 'scrap' : ''}">${C.skills[0].cost}</div></div>
-        <div class="act dodge" data-act="dodge"><img src="${icon('dash')}" alt="Dodge"><div class="cd"></div></div>
-        <div class="act pot" data-act="pot"><img src="${icon('potionRed')}" alt="Potion"><div class="cd"></div><div class="num">0</div></div>
         <div class="act s2" data-act="s1"><img src="${icon(C.skills[1].icon)}" alt=""><div class="cd"></div><div class="cost ${res === 'scrap' ? 'scrap' : ''}">${C.skills[1].cost}</div></div>
+        <div class="act pot" data-act="pot"><img src="${icon('potionRed')}" alt="Potion"><div class="cd"></div><div class="num">0</div></div>
+        <div class="act dodge" data-act="dodge"><img src="${icon('dash')}" alt="Dash"><div class="cd"></div></div>
+        <div class="act jump" data-act="jump"><img src="${icon('jump')}" alt="Jump"></div>
+        <div class="act big" data-act="atk"><img src="${icon(CLASS_ICON[s.cls])}" alt="Attack"></div>
       </div>
       <button id="interact" class="btn gold hidden"><span class="k">E</span><span class="l"></span></button>
       <div class="downed frame hidden"><img src="${art(s.cls, 'shock')}" alt=""><div><div class="t">DOWNED</div><div class="s"></div></div></div>
@@ -255,6 +256,7 @@ export class UI {
       if (!a) return;
       sfx.ui();
       if (a === 'tracker') { this.trackerOpen = !this.trackerOpen; this.renderTracker(); }
+      else if (a === 'chat') this.openChat();
       else this.openPanel(a);
     });
     $('#interact', hud).addEventListener('click', () => G.scene && G.scene.interact());
@@ -322,13 +324,13 @@ export class UI {
       const a = b.dataset.act;
       const c = G.scene.combat;
       if (a === 'atk') { this.attackHeld = true; c.attack(); }
-      else if (a === 'chat') this.openChat();
+      else if (a === 'jump') { G.input.jumpHeld = true; c.jump(G.input.my > 0.5); }
       else if (a === 's0') c.skill(0);
       else if (a === 's1') c.skill(1);
       else if (a === 'dodge') c.dodge();
       else if (a === 'pot') c.potion();
     });
-    const up = (e) => { for (const b of el.querySelectorAll('.down')) b.classList.remove('down'); if (!e.target.closest || true) this.attackHeld = false; };
+    const up = () => { for (const b of el.querySelectorAll('.down')) b.classList.remove('down'); this.attackHeld = false; G.input.jumpHeld = false; };
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
     el.addEventListener('pointerleave', up);
@@ -527,8 +529,8 @@ export class UI {
     }[npc.role];
     ov.innerHTML = `<div class="dlg frame"><div class="pf"><canvas width="64" height="64"></canvas></div><div style="flex:1;min-width:0"><div class="who">${esc(npc.name)}</div><div class="txt"></div><div class="acts">${roleBtn ? `<button class="btn gold small" data-a="${roleBtn[1]}">${roleBtn[0]}</button>` : ''}<button class="btn small" data-a="bye">Goodbye</button></div></div></div>`;
     document.body.appendChild(ov);
-    const look = npc.look || NPC_LOOKS[npc.id] || NPC_LOOKS.villagerA;
-    drawFrame($('canvas', ov), sheetCanvas('npc_' + npc.id, look), 0);
+    if (npc.pack) { const cv = $('canvas', ov); const im = document.createElement('img'); im.src = `./art/pack/${npc.pack}.png`; im.style.cssText = 'position:absolute;inset:4px;width:calc(100% - 8px);height:calc(100% - 8px);object-fit:contain;image-rendering:pixelated'; cv.replaceWith(im); }
+    else { const look = npc.look || NPC_LOOKS[npc.id] || NPC_LOOKS.villagerA; drawFrame($('canvas', ov), sheetCanvas('npc_' + npc.id, look), 0); }
     const txt = $('.txt', ov);
     let i = 0;
     const line = npc.line || '…';

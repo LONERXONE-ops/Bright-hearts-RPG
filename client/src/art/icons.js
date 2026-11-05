@@ -17,6 +17,7 @@ const draw = {
   revolver: (p) => { p.rect(3, 5, 10, 3, R.steel[4]); p.hline(3, 12, 5, R.steel[6]); p.rect(5, 6, 4, 4, R.steel[3]); p.ellipse(7, 8, 2, 2, R.steel[2]); p.poly([[3, 8], [6, 8], [5, 14], [2, 14]], R.wood[3]); p.set(4, 10, R.gold[4]); },
   bow: (p) => { for (let j = -6; j <= 6; j++) { const b = Math.round(4 - (j * j) / 10); p.set(4 + b, 8 + j, Math.abs(j) > 4 ? R.bone[4] : R.wood[3]); p.set(5 + b, 8 + j, R.wood[1]); } p.vline(4, 2, 14, R.bone[5]); p.line(3, 11, 13, 3, R.wood[4]); p.set(14, 2, R.steel[6]); p.set(13, 2, R.steel[4]); },
   volley: (p) => { for (const [x, y] of [[3, 2], [8, 4], [12, 1]]) { p.vline(x, y, y + 9, R.wood[4]); p.set(x, y + 10, R.steel[6]); p.set(x - 1, y + 9, R.steel[4]); p.set(x + 1, y + 9, R.steel[4]); p.set(x - 1, y, R.red[4]); p.set(x + 1, y, R.red[4]); } },
+  jump: (p) => { p.poly([[8, 1], [14, 8], [10, 8], [10, 12], [6, 12], [6, 8], [2, 8]], R.bone[5]); p.hline(3, 12, 14, R.bone[3]); },
   pause: (p) => { p.rect(4, 3, 3, 10, R.bone[5]); p.rect(9, 3, 3, 10, R.bone[5]); },
   wrench: (p) => { p.line(3, 13, 11, 5, R.steel[4]); p.line(4, 13, 12, 5, R.steel[2]); p.ellipse(12, 4, 3, 3, R.steel[4]); p.ellipse(12.5, 3.5, 1.2, 1.2, null); p.set(13, 3, R.steel[1]); p.set(12, 3, R.steel[1]); p.set(3, 13, R.orange[4]); },
   helmet: (p, ramp = R.steel) => { p.ball(8, 8, 6, 6, ramp.slice(1, 6)); p.rect(2, 9, 12, 5, c(ramp, 3)); p.hline(4, 11, 9, INK); p.hline(4, 11, 10, c(ramp, 1)); p.vline(7, 11, 13, c(ramp, 1)); p.rect(2, 12, 12, 2, c(ramp, 2)); },

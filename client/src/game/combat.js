@@ -4,7 +4,7 @@
 // resolves damage against its own hero, and each player rolls their own private loot.
 import { G } from './state.js';
 import { net } from '../net.js';
-import { iso, depthOf } from './WorldScene.js';
+import { iso, depthOf, CHEST, PHYS } from './space.js';
 import { CLASSES, derive } from '../data/classes.js';
 import { ENEMIES, BOSSES } from './enemydefs.js';
 import { DIFFICULTY, bracket, DUNGEONS } from '../world/dungeon.js';
@@ -15,13 +15,12 @@ import { anchorOf } from './assets.js';
 
 const TAU = Math.PI * 2;
 const rand = (a, b) => a + Math.random() * (b - a);
-// screen-space vector -> world-space direction
-function screenToWorld(sx, sy) {
-  const wx = (sx / 16 + sy / 8) / 2, wy = (sy / 8 - sx / 16) / 2;
-  const l = Math.hypot(wx, wy) || 1;
-  return { x: wx / l, y: wy / l };
+const CH = CHEST * 16; // chest height in pixels
+// side-view hit test: point (px, py=feet line) against target t; targets are ~2 tiles tall
+function hits(t, px, py, rx, ry = 1.4) {
+  const top = t.head ? t.y - 1.4 : t.y - (t.h || 1.6);
+  return Math.abs(t.x - px) < rx + t.r && py > top - ry * 0.5 && py < t.y + ry;
 }
-function worldToScreen(wx, wy) { return { x: (wx - wy) * 16, y: (wx + wy) * 8 }; }
 
 export class Combat {
   constructor(scene) {
@@ -71,8 +70,8 @@ export class Combat {
       me.hp = Math.min(me.stats.maxHp, me.hp + me.stats.hpRegen * dt);
       if (me.resource === 'mana') me.mp = Math.min(me.stats.maxMp, me.mp + me.stats.mpRegen * dt);
       if (me.status.poison) this.hurtMe(me.stats.maxHp * 0.025 * dt * (1 - me.stats.poisonRes), 'poison', true);
-      for (const h of S.hazards || []) if (Math.hypot(h.x - me.x, h.y - me.y) < h.r) me.status.poison = 2;
-      for (const h of this.dynHazards) if (Math.hypot(h.x - me.x, h.y - me.y) < h.r) me.status.poison = 2;
+      for (const h of S.hazards || []) if (Math.abs(h.x - me.x) < h.r && Math.abs(h.y - me.y) < 0.9) me.status.poison = 2;
+      for (const h of this.dynHazards) if (Math.abs(h.x - me.x) < h.r && Math.abs(h.y - me.y) < 0.9) me.status.poison = 2;
     }
 
     // downed / bleed-out
@@ -87,61 +86,85 @@ export class Combat {
       }
     }
 
-    // movement
+    // ---- side-view platformer movement
     let moving = false;
+    me.jumpBuf = Math.max(0, (me.jumpBuf || 0) - dt);
+    me.dropT = Math.max(0, (me.dropT || 0) - dt);
+    me.dropThrough = me.dropT > 0;
     if (me.down) {
-      // crawl very slowly
+      me.vx = 0;
     } else if (me.dodge) {
       const d = me.dodge;
-      const step = d.speed * dt;
-      S.moveEntity(me, d.x * step, d.y * step);
+      S.moveEntity(me, d.x * d.speed * dt);
+      me.vy = 0;
       d.t -= dt;
       if (d.dmg) this.sweepHit(me, d);
       if (d.t <= 0) me.dodge = null;
       moving = true;
-    } else if (me.lock <= 0 && (mx || my) && !me.status.root) {
-      const mag = Math.min(1, Math.hypot(mx, my));
-      const w = screenToWorld(mx, my);
-      let sp = me.stats.speed * mag * (me.status.haste ? 1.25 : 1) * (me.status.slow ? 0.6 : 1);
+    } else {
+      let sp = me.stats.speed * 1.45 * (me.status.haste ? 1.25 : 1) * (me.status.slow ? 0.6 : 1);
       if (me.status.taunt && me.cls === 'savage') sp *= 0.9;
-      moving = S.moveEntity(me, w.x * sp * dt, w.y * sp * dt);
-      me.face = { x: mx, y: my };
+      const want = me.lock > 0 || me.status.root ? 0 : mx;
+      // snappy acceleration with a little slide
+      const target = want * sp;
+      const acc = me.onGround ? 40 : 22;
+      if (Math.abs(target - (me.vx || 0)) < acc * dt) me.vx = target; else me.vx += Math.sign(target - (me.vx || 0)) * acc * dt;
+      if (me.vx) moving = S.moveEntity(me, me.vx * dt) && Math.abs(me.vx) > 0.5;
+      if (me.blocked) { me.vx = 0; me.blocked = false; }
+      if (Math.abs(mx) > 0.15 && me.lock <= 0) me.face = { x: Math.sign(mx), y: 0 };
+      // buffered jump + coyote time
+      if (me.jumpBuf > 0 && (me.onGround || me.coyote > 0) && !me.status.root) {
+        if ((my > 0.5 || this.jumpDown) && S.tileAt(me.x, me.y + 0.1) === '=') { me.dropT = 0.25; me.dropThrough = true; me.y += 0.05; }
+        else { me.vy = -PHYS.jump; sfx.dash(); this.puff(me.x, me.y, 'puff_dust', 0.4); }
+        me.jumpBuf = 0; me.coyote = 0; me.onGround = false;
+      }
+      // short hop when the jump button is released early
+      if (!this.holdJump && me.vy < -7) me.vy = -7;
     }
-    me.state = me.down ? 'down' : me.atkAnimT > 0 ? 'atk' : me.dodge ? 'dodge' : moving ? 'walk' : 'idle';
+    if (!me.dodge) S.phys(me, dt);
+    me.state = me.down ? 'down' : me.atkAnimT > 0 ? 'atk' : me.dodge ? 'dodge' : !me.onGround ? (me.vy < 0 ? 'jump' : 'fall') : moving ? 'walk' : 'idle';
     if (me.down) {
       me.spr.anims.stop();
-      me.spr.setFrame((me.face.y >= 0 ? 0 : 10) + 9);
+      me.spr.setFrame(11);
       me.anim = 'down';
-    } else S.heroAnim(me, me.state === 'atk' ? 'atk' : moving ? 'walk' : 'idle');
+    } else S.heroAnim(me, me.state === 'dodge' ? 'run' : me.state);
 
     const p = iso(me.x, me.y);
-    me.spr.setPosition(p.x, p.y + 2).setDepth(depthOf(me.x, me.y, 1));
+    me.spr.setPosition(p.x, p.y + 1).setDepth(depthOf(me.x, me.y, 1));
     me.spr.setAlpha(me.iframes > 0 && Math.floor(S.t * 20) % 2 ? 0.55 : 1);
     if (me.flashT > 0) { me.flashT -= dt; me.spr.setTintFill(0xff5050); if (me.flashT <= 0) me.spr.clearTint(); }
-    me.shadow.setPosition(p.x, p.y).setDepth(depthOf(me.x, me.y, -2));
-    me.tag.setPosition(p.x, p.y - 30).setDepth(90000);
-    if (me.bubble) me.bubble.setPosition(p.x, p.y - 38);
+    const gy = S.groundBelow(me.x, me.y);
+    me.shadow.setPosition(p.x, gy * 16).setDepth(depthOf(me.x, me.y, -2)).setAlpha(Math.max(0.2, 1 - (gy - me.y) * 0.25));
+    me.tag.setPosition(p.x, p.y - 44).setDepth(90000);
+    if (me.bubble) me.bubble.setPosition(p.x, p.y - 48);
 
     this.updateRevive(dt);
   }
 
-  faceTo(e, x, y) {
-    const sc = worldToScreen(x - e.x, y - e.y);
-    if (Math.hypot(sc.x, sc.y) > 0.01) e.face = { x: sc.x, y: sc.y };
+  faceTo(e, x) {
+    if (Math.abs(x - e.x) > 0.05) e.face = { x: Math.sign(x - e.x), y: 0 };
   }
-  faceDir(e) { return screenToWorld(e.face.x, e.face.y); }
+  faceDir(e) { return { x: (e.face.x || 1) < 0 ? -1 : 1, y: 0 }; }
+
+  jump(down) {
+    const me = this.me;
+    if (me.down || me.dead) return;
+    me.jumpBuf = PHYS.buffer;
+    this.jumpDown = !!down;
+  }
 
   targets() {
     const list = [];
-    for (const e of this.s.enemies.values()) if (e.alive) list.push({ x: e.x, y: e.y, r: e.def.radius, e });
-    if (this.boss && this.boss.alive) for (const h of this.boss.heads) if (h.alive) list.push({ x: h.x, y: h.y, r: 0.85, e: this.boss, head: h });
+    for (const e of this.s.enemies.values()) if (e.alive) list.push({ x: e.x, y: e.y, r: e.def.radius, h: e.bh || 1.1, e });
+    if (this.boss && this.boss.alive) for (const h of this.boss.heads) if (h.alive) list.push({ x: h.x, y: h.y, r: 1, h: 1.8, e: this.boss, head: h });
     return list;
   }
   autoTarget(range) {
     const me = this.me;
     let best = null, bd = range;
     for (const t of this.targets()) {
-      const d = Math.hypot(t.x - me.x, t.y - me.y) - t.r;
+      const behind = Math.sign(t.x - me.x) !== Math.sign(me.face.x || 1) ? 1.5 : 0;
+      const d = Math.hypot(t.x - me.x, (t.y - me.y) * 1.3) - t.r + behind;
       if (d < bd) { bd = d; best = t; }
     }
     if (!best) {
@@ -170,16 +193,18 @@ export class Combat {
     const dmg = base * (crit ? me.stats.critDmg : 1);
     if (cls.melee) {
       sfx.swing();
-      this.slashFx(me.x + dir.x * 0.6, me.y + dir.y * 0.6, me.face.x < 0, me.cls === 'savage' ? 1.25 : 1);
+      this.slashFx(me.x + dir.x * 0.9, me.y, me.face.x < 0, 1.25);
       this.meleeHit(me, cls.range, 1.3, dmg, { crit, poise: me.cls === 'savage' ? 30 : 12, kb: me.cls === 'savage' ? 0.6 : 0.3 });
-      this.netFx({ k: 'slash', x: me.x + dir.x * 0.6, y: me.y + dir.y * 0.6, f: me.face.x < 0 ? 1 : 0 });
+      this.netFx({ k: 'slash', x: me.x + dir.x * 0.9, y: me.y, f: me.face.x < 0 ? 1 : 0 });
     } else {
       const kind = { mage: 'magic', gunman: 'bullet', engineer: 'wrench', savage: 'arrow' }[me.cls];
       if (kind === 'bullet') sfx.shoot(); else if (kind === 'arrow') sfx.swing(); else sfx.magic();
       const flat = kind === 'bullet' || kind === 'arrow';
-      const proj = { x: me.x + dir.x * 0.4, y: me.y + dir.y * 0.4, dx: dir.x, dy: dir.y, speed: flat ? 14 : 9, range: cls.range + 1, dmg, crit, owner: 'me', tex: flat ? kind : 'orb_' + kind, light: kind === 'magic' };
+      let ax = dir.x, ay = 0;
+      if (tgt) { const tx = tgt.x - me.x, ty = tgt.y - me.y, l = Math.hypot(tx, ty) || 1; ax = tx / l; ay = ty / l; }
+      const proj = { x: me.x + dir.x * 0.4, y: me.y, dx: ax, dy: ay, speed: flat ? 14 : 9, range: cls.range + 1, dmg, crit, owner: 'me', tex: flat ? kind : 'orb_' + kind, light: kind === 'magic' };
       this.spawnProj(proj);
-      this.netFx({ k: 'proj', x: proj.x, y: proj.y, dx: dir.x, dy: dir.y, sp: proj.speed, r: proj.range, tex: proj.tex });
+      this.netFx({ k: 'proj', x: proj.x, y: proj.y, dx: ax, dy: ay, sp: proj.speed, r: proj.range, tex: proj.tex });
     }
   }
 
@@ -187,19 +212,26 @@ export class Combat {
     const dir = this.faceDir(me);
     let hitAny = false;
     for (const t of this.targets()) {
-      const dx = t.x - me.x, dy = t.y - me.y;
-      const d = Math.hypot(dx, dy);
-      if (d > range + t.r) continue;
-      const ang = Math.acos(Math.max(-1, Math.min(1, (dx * dir.x + dy * dir.y) / (d || 1))));
-      if (d > 0.5 && ang > arc) continue;
+      const dx = (t.x - me.x) * dir.x;
+      if (dx < -0.5 || dx > range + t.r + 0.3) continue;
+      if (!hits(t, me.x, me.y - 0.6, range + 1, 1.6)) continue;
       this.damageTarget(t, dmg, { ...o, from: me });
       hitAny = true;
     }
     for (const b of [...(this.s.breakables?.values() || [])]) {
-      const d = Math.hypot(b.x - me.x, b.y - me.y);
-      if (d < range + 0.5) { this.hitBreakable(b); hitAny = true; }
+      const dx = (b.x - me.x) * dir.x;
+      if (dx > -0.4 && dx < range + 0.7 && Math.abs(b.y - me.y) < 1.6) { this.hitBreakable(b); hitAny = true; }
     }
-    if (hitAny) this.s.shake(1.5, 0.08);
+    if (hitAny) { this.s.shake(2, 0.08); this.hitstop(0.05); }
+  }
+
+  // tiny freeze-frame on impact (Darkrise-style juice)
+  hitstop(t) {
+    const S = this.s;
+    if (S.run?.online || this._hs) return;
+    this._hs = true;
+    S.time.timeScale = 0.05; S.tweens.timeScale = 0.05;
+    setTimeout(() => { S.time.timeScale = 1; S.tweens.timeScale = 1; this._hs = false; }, t * 1000);
   }
 
   sweepHit(me, d) {
@@ -207,7 +239,7 @@ export class Combat {
     for (const t of this.targets()) {
       const key = t.head ? 'h' + t.head.i : t.e.id;
       if (d.hit.has(key)) continue;
-      if (Math.hypot(t.x - me.x, t.y - me.y) < 0.9 + t.r) { d.hit.add(key); this.damageTarget(t, d.dmg, { from: me, kb: 0.3 }); }
+      if (hits(t, me.x, me.y, 0.9)) { d.hit.add(key); this.damageTarget(t, d.dmg, { from: me, kb: 0.3 }); }
     }
   }
 
@@ -231,20 +263,20 @@ export class Combat {
     switch (sk.id) {
       case 'beam': {
         sfx.magic();
-        this.spawnProj({ x: me.x, y: me.y, dx: dir.x, dy: dir.y, speed: 12, range: 7.5, dmg: me.stats.atk * 1.7 * cm, crit, owner: 'me', tex: 'orb_beam', pierce: true, light: true, scale: 1.3 });
-        this.netFx({ k: 'proj', x: me.x, y: me.y, dx: dir.x, dy: dir.y, sp: 12, r: 7.5, tex: 'orb_beam' });
+        this.spawnProj({ x: me.x, y: me.y, dx: dir.x, dy: 0, speed: 12, range: 7.5, dmg: me.stats.atk * 1.7 * cm, crit, owner: 'me', tex: 'orb_beam', pierce: true, light: true, scale: 1.3 });
+        this.netFx({ k: 'proj', x: me.x, y: me.y, dx: dir.x, dy: 0, sp: 12, r: 7.5, tex: 'orb_beam' });
         break;
       }
       case 'blink': {
         sfx.dash();
-        me.dodge = { x: dir.x, y: dir.y, speed: 13, t: 0.28, dmg: me.stats.atk * 1.3 * cm };
+        me.dodge = { x: dir.x, y: 0, speed: 15, t: 0.28, dmg: me.stats.atk * 1.3 * cm };
         me.iframes = 0.35;
         this.puff(me.x, me.y, 'puff_magic');
         break;
       }
       case 'firestorm': {
         sfx.magic();
-        const tx = tgt ? tgt.x : me.x + dir.x * 3, ty = tgt ? tgt.y : me.y + dir.y * 3;
+        const tx = tgt ? tgt.x : me.x + dir.x * 3, ty = tgt ? tgt.y : me.y;
         this.storm(tx, ty, me.stats.spell * 0.75, true);
         this.netFx({ k: 'storm', x: tx, y: ty });
         break;
@@ -259,7 +291,7 @@ export class Combat {
       }
       case 'volley': {
         sfx.swing();
-        const tx = tgt ? tgt.x : me.x + dir.x * 3, ty = tgt ? tgt.y : me.y + dir.y * 3;
+        const tx = tgt ? tgt.x : me.x + dir.x * 3, ty = tgt ? tgt.y : me.y;
         this.storm(tx, ty, me.stats.atk * 0.8 * cm, true, 'arrow');
         this.netFx({ k: 'storm', x: tx, y: ty, a: 'arrow' });
         break;
@@ -278,32 +310,33 @@ export class Combat {
         S.shake(4, 0.25);
         this.ring(me.x, me.y, 'ring_slam');
         this.puff(me.x, me.y, 'puff_dust', 1.4);
-        for (const t of this.targets()) if (Math.hypot(t.x - me.x, t.y - me.y) < 2.4 + t.r) this.damageTarget(t, me.stats.atk * 1.5 * cm, { crit, stun: 1.5, poise: 60, from: me, kb: 0.5 });
+        for (const t of this.targets()) if (hits(t, me.x, me.y, 2.6, 1.2)) this.damageTarget(t, me.stats.atk * 1.5 * cm, { crit, stun: 1.5, poise: 60, from: me, kb: 0.5 });
         for (const b of [...(S.breakables?.values() || [])]) if (Math.hypot(b.x - me.x, b.y - me.y) < 2.4) this.hitBreakable(b);
         this.netFx({ k: 'ring', x: me.x, y: me.y, a: 'ring_slam' });
         break;
       }
       case 'snipe': {
         sfx.crit();
-        this.spawnProj({ x: me.x, y: me.y, dx: dir.x, dy: dir.y, speed: 24, range: 10, dmg: me.stats.atk * 2.3 * cm, crit, owner: 'me', tex: 'bullet', pierce: true, bossMult: 3, scale: 1.5, light: true });
-        this.netFx({ k: 'proj', x: me.x, y: me.y, dx: dir.x, dy: dir.y, sp: 24, r: 10, tex: 'bullet' });
+        const sl = tgt ? Math.hypot(tgt.x - me.x, tgt.y - me.y) || 1 : 1;
+        this.spawnProj({ x: me.x, y: me.y, dx: tgt ? (tgt.x - me.x) / sl : dir.x, dy: tgt ? (tgt.y - me.y) / sl : 0, speed: 24, range: 10, dmg: me.stats.atk * 2.3 * cm, crit, owner: 'me', tex: 'bullet', pierce: true, bossMult: 3, scale: 1.5, light: true });
+        this.netFx({ k: 'proj', x: me.x, y: me.y, dx: dir.x, dy: 0, sp: 24, r: 10, tex: 'bullet' });
         break;
       }
       case 'grenade': {
-        const tx = tgt ? tgt.x : me.x + dir.x * 3.5, ty = tgt ? tgt.y : me.y + dir.y * 3.5;
-        this.lob(me.x, me.y, tx, ty, 'orb_venom', 0.55, () => this.explode(tx, ty, 1.9, me.stats.atk * 1.8 * cm, crit));
+        const tx = tgt ? tgt.x : me.x + dir.x * 3.5, ty = tgt ? tgt.y : this.s.groundBelow(me.x + dir.x * 3.5, me.y - 1);
+        this.lob(me.x, me.y, tx, ty, 'pk_sphere', 0.55, () => this.explode(tx, ty, 1.9, me.stats.atk * 1.8 * cm, crit));
         this.netFx({ k: 'lob', x: me.x, y: me.y, tx, ty });
         break;
       }
       case 'sentry': {
         sfx.door();
-        const x = me.x + dir.x * 0.9, y = me.y + dir.y * 0.9;
+        const x = me.x + dir.x * 0.9, y = me.y;
         this.addDevice('sentry', x, y, true);
         this.netFx({ k: 'dev', d: 'sentry', x, y });
         break;
       }
       case 'snare': {
-        const x = me.x + dir.x * 1.2, y = me.y + dir.y * 1.2;
+        const x = me.x + dir.x * 1.2, y = me.y;
         this.addDevice('snare', x, y, true);
         this.netFx({ k: 'dev', d: 'snare', x, y });
         break;
@@ -315,13 +348,13 @@ export class Combat {
   dodge() {
     const me = this.me;
     if (me.down || me.dead || me.dodgeCd > 0 || me.status.root) return;
-    let mx = G.input.mx, my = G.input.my;
-    if (!mx && !my) { mx = me.face.x; my = me.face.y; }
-    const w = screenToWorld(mx, my);
-    me.dodge = { x: w.x, y: w.y, speed: 10 * (hasPerk(G.save, 'fleet') ? 1.1 : 1), t: 0.26 };
-    me.iframes = 0.38;
+    let mx = G.input.mx;
+    if (Math.abs(mx) < 0.2) mx = me.face.x || 1;
+    const dir = Math.sign(mx);
+    me.dodge = { x: dir, y: 0, speed: 13 * (hasPerk(G.save, 'fleet') ? 1.1 : 1), t: 0.24 };
+    me.iframes = 0.36;
     me.dodgeCd = 1.1;
-    me.face = { x: mx, y: my };
+    me.face = { x: dir, y: 0 };
     sfx.dash();
     this.puff(me.x, me.y, 'puff_dust', 0.6);
   }
@@ -464,7 +497,8 @@ export class Combat {
     e.flash = 0.1;
     if (o.kb && o.from) {
       const ax = e.x - o.from.x, ay = e.y - o.from.y, l = Math.hypot(ax, ay) || 1;
-      e.kb = { x: (ax / l) * o.kb * 6, y: (ay / l) * o.kb * 6, t: 0.12 };
+      e.kb = { x: Math.sign(ax || 1) * o.kb * 7, y: 0, t: 0.14 };
+      if (e.onGround) e.vy = -4 * o.kb;
     }
     if (this.s.isHost) this.applyEnemyDamage(e, d, o, net.id || 0);
     else {
@@ -580,13 +614,14 @@ export class Combat {
     for (const room of S.map.rooms) {
       if (!room.gate) continue;
       const gate = { room, imgs: [], open: false };
-      for (const [x, y] of room.gate.tiles) {
-        S.blockers.add(x + ',' + y);
-        const p = iso(x + 0.5, y + 0.5);
-        const g = S.add.image(p.x, p.y - 10, 'light').setTint(0x6dffb0).setBlendMode(Phaser.BlendModes.ADD).setScale(0.32, 0.5).setAlpha(0.75).setDepth(depthOf(x + 0.5, y + 0.5));
-        S.tweens.add({ targets: g, alpha: 0.4, duration: 700, yoyo: true, repeat: -1 });
-        const v = S.add.image(p.x, p.y, 'fern_' + ((x + y) % 6)).setDepth(depthOf(x + 0.5, y + 0.5, 1)).setTint(0x9dffc8);
-        gate.imgs.push(g, v);
+      for (const [x, y] of room.gate.tiles) S.blockers.add(x + ',' + y);
+      {
+        const gx = room.gate.x * 16, gy = 14 * 16;
+        const seal = S.add.sprite(gx, gy, 'seal_0').setOrigin(0.5, 1).setDepth(depthOf(room.gate.x, 14, 2)).setScale(1, 0.75);
+        let f = 0; S.time.addEvent({ delay: 260, loop: true, callback: () => { if (seal.active) seal.setTexture('seal_' + ((f = 1 - f))); } });
+        const g = S.add.image(gx, gy - 24, 'light').setTint(0x6dffb0).setBlendMode(Phaser.BlendModes.ADD).setScale(0.35, 0.6).setAlpha(0.7).setDepth(85300);
+        S.tweens.add({ targets: g, alpha: 0.35, duration: 700, yoyo: true, repeat: -1 });
+        gate.imgs.push(seal, g);
       }
       this.gates.push(gate);
       if (room.cleared) this.openGate(gate, true);
@@ -605,9 +640,10 @@ export class Combat {
       hp: def.hp * br.hp * dm.hp, maxHp: def.hp * br.hp * dm.hp, atk: def.atk * dm.atk,
       poise: def.poise * br.poise, poiseMult: br.poise,
       alive: true, state: 'idle', cd: rand(0.5, 1.5), wind: 0, stun: 0, root: 0, sunder: 0, flash: 0,
-      face: { x: 1, y: 1 }, anim: '', wander: rand(0, 3),
+      face: { x: Math.random() < 0.5 ? -1 : 1, y: 0 }, anim: '', wander: rand(0, 3),
+      vx: 0, vy: 0, bw: Math.max(0.6, def.radius * 2), bh: sp.t === 'tortoise' ? 1.3 : 1.1, onGround: false,
     };
-    e.shadow = S.add.image(p.x, p.y, 'shadow').setScale(def.radius * 3);
+    e.shadow = S.add.image(p.x, p.y, 'shadow').setScale(def.radius * 3, 1);
     e.spr = S.add.sprite(p.x, p.y, 'en_' + sp.t).setOrigin(0.5, 0.92);
     e.spr.play({ key: `en_${sp.t}_idle`, startFrame: Math.floor(Math.random() * 2) });
     e.bar = S.add.graphics();
@@ -619,23 +655,17 @@ export class Combat {
     const def = BOSSES[b.t];
     const boss = {
       id: b.id, def, x: b.x, y: b.y, alive: true, room: b.room, cd: 3, turn: 0, awake: false,
-      heads: def.heads.map((h, i) => {
-        // head placement is authored in screen pixels, converted to world for targeting
-        const wx = (h.sx / 16 + h.sy / 8) / 2, wy = (h.sy / 8 - h.sx / 16) / 2;
-        return { i, ...h, ox: wx, hp: def.headHp * br.hp * dm.hp, maxHp: def.headHp * br.hp * dm.hp, alive: true, x: b.x + wx, y: b.y + wy, lunge: 0, open: 0, flash: 0 };
-      }),
+      heads: def.heads.map((h, i) => ({ i, ...h, hp: def.headHp * br.hp * dm.hp, maxHp: def.headHp * br.hp * dm.hp, alive: true, x: b.x + h.sx / 16, y: b.y - 3, lunge: 0, open: 0, flash: 0 })),
       atk: def.atk * dm.atk, solo: br.bossTurn < 1,
     };
     const p = iso(b.x, b.y);
-    boss.shadow = S.add.image(p.x, p.y + 6, 'shadow').setScale(5, 4).setAlpha(0.8);
-    boss.body = S.add.image(p.x, p.y + 12, 'boss_body').setOrigin(0.5, 1).setDepth(depthOf(b.x, b.y)).setScale(1.25);
+    boss.shadow = S.add.image(p.x, p.y, 'shadow').setScale(6, 1.6).setAlpha(0.8);
+    boss.body = S.add.image(p.x, p.y + 4, 'boss_body').setOrigin(0.5, 1).setDepth(depthOf(b.x, b.y, -1)).setScale(1.4);
     boss.necks = S.add.graphics().setDepth(depthOf(b.x, b.y, 2));
     for (const h of boss.heads) {
       h.spr = S.add.sprite(0, 0, 'boss_head' + h.i, 0).setOrigin(0.5, 0.6).setDepth(depthOf(b.x, b.y, 5)).setScale(1.35);
       if (h.sx < 0) h.spr.setFlipX(true);
     }
-    // the coiled body is solid
-    for (let dy = -1; dy <= 0; dy++) for (let dx = -1; dx <= 1; dx++) S.setSolid(Math.floor(b.x) + dx, Math.floor(b.y) + dy);
     this.boss = boss;
   }
 
@@ -666,7 +696,8 @@ export class Combat {
   }
 
   roomAt(x, y) {
-    for (const r of this.s.map.rooms) if (x >= r.x0 - 0.2 && x <= r.x1 + 1.2 && y >= r.y0 - 0.2 && y <= r.y1 + 1.2) return r;
+    for (const r of this.s.map.rooms) if (x >= r.x0 - 0.2 && x <= r.x1 + 1.2) return r;
+    void y;
     return null;
   }
 
@@ -741,7 +772,7 @@ export class Combat {
   roomActive(i) {
     const S = this.s;
     const r = S.map.rooms[i];
-    const inR = (x, y) => x >= r.x0 - 0.5 && x <= r.x1 + 1.5 && y >= r.y0 - 0.5 && y <= r.y1 + 1.5;
+    const inR = (x) => x >= r.x0 - 0.5 && x <= r.x1 + 1.5;
     if (inR(this.me.x, this.me.y) && !this.me.dead) return true;
     for (const rr of S.remotes.values()) if (!rr.dead && inR(rr.x, rr.y)) return true;
     return false;
@@ -751,11 +782,12 @@ export class Combat {
     const S = this.s;
     const def = e.def;
     e.cd -= dt;
-    if (e.kb) { S.moveEntity(e, e.kb.x * dt, e.kb.y * dt, def.radius * 0.8); e.kb.t -= dt; if (e.kb.t <= 0) e.kb = null; }
+    S.phys(e, dt);
+    if (e.kb) { S.moveEntity(e, e.kb.x * dt); e.kb.t -= dt; if (e.kb.t <= 0) e.kb = null; }
     if (e.stun > 0) { e.stun -= dt; e.state = 'idle'; e.wind = 0; return; }
     if (e.root > 0) e.root -= dt;
     // snares
-    for (const d of this.devices) if (d.kind === 'snare' && d.owner && Math.hypot(d.x - e.x, d.y - e.y) < 0.8 && !d.used) { d.used = true; d.t = Math.min(d.t, 0.5); e.root = 3; this.floatText(e.x, e.y, 'ROOTED', '#cdeaff', 7); }
+    for (const d of this.devices) if (d.kind === 'snare' && d.owner && Math.abs(d.x - e.x) < 0.8 && Math.abs(d.y - e.y) < 1 && !d.used) { d.used = true; d.t = Math.min(d.t, 0.5); e.root = 3; this.floatText(e.x, e.y, 'ROOTED', '#cdeaff', 7); }
     const active = this.roomActive(e.room);
     const tgt = active ? this.pickTarget(e) : null;
     if (!tgt) {
@@ -777,7 +809,7 @@ export class Combat {
       }
       return;
     }
-    this.faceTo(e, tgt.x, tgt.y);
+    this.faceTo(e, tgt.x);
     let move = 0;
     const sp = def.speed * (e.root > 0 ? 0 : 1);
     if (def.kind === 'melee') {
@@ -802,7 +834,8 @@ export class Combat {
             this.ring(ally.x, ally.y, 'ring_heal');
             net.ev({ k: 'fx', f: { k: 'ring', x: ally.x, y: ally.y, a: 'ring_heal' } });
           } else {
-            const lob = { x: e.x, y: e.y, tx: tgt.x + rand(-0.4, 0.4), ty: tgt.y + rand(-0.4, 0.4), dmg: e.atk };
+            const lx = tgt.x + rand(-0.5, 0.5);
+            const lob = { x: e.x, y: e.y, tx: lx, ty: S.groundBelow(lx, tgt.y - 0.5), dmg: e.atk };
             this.enemyLob(lob);
             net.ev({ k: 'elob', ...lob });
           }
@@ -814,15 +847,17 @@ export class Combat {
       }
     }
     if (move && sp > 0) {
-      // simple separation from other enemies
-      let sx = (dx / d) * move, sy = (dy / d) * move;
+      // walk toward/away horizontally, spread out a little, hop up ledges
+      let sx = Math.sign(dx) * move;
       for (const o of S.enemies.values()) {
         if (o === e || !o.alive) continue;
-        const ox = e.x - o.x, oy = e.y - o.y, od = Math.hypot(ox, oy);
-        if (od < 0.7 && od > 0) { sx += (ox / od) * 0.6; sy += (oy / od) * 0.6; }
+        const ox = e.x - o.x;
+        if (Math.abs(ox) < 0.6 && Math.abs(e.y - o.y) < 1) sx += Math.sign(ox || 1) * 0.5;
       }
-      const l = Math.hypot(sx, sy) || 1;
-      S.moveEntity(e, (sx / l) * sp * dt, (sy / l) * sp * dt, def.radius * 0.8);
+      if (Math.abs(dx) < 0.3 && move > 0) sx = 0;
+      e.blocked = false;
+      if (sx) S.moveEntity(e, Math.sign(sx) * sp * dt);
+      if ((e.blocked || dy < -1.5) && e.onGround && Math.random() < 0.04) e.vy = -11;
       e.state = 'move';
     } else if (!e.atkT || e.atkT <= 0) e.state = 'idle';
     if (e.atkT > 0) e.atkT -= dt;
@@ -836,20 +871,20 @@ export class Combat {
 
   enemyShot(l) {
     sfx.shoot();
-    this.spawnProj({ x: l.x, y: l.y, dx: l.dx, dy: l.dy, speed: 5.5, range: 7, dmg: l.dmg, owner: 'enemy', tex: 'orb_venom', poison: true, light: true });
+    this.spawnProj({ x: l.x, y: l.y, dx: l.dx, dy: l.dy, speed: 6, range: 9, dmg: l.dmg, owner: 'enemy', tex: 'orb_venom', poison: true, light: true, lift: l.lift ?? 0.55 });
   }
 
   enemyLob(l) {
     this.lob(l.x, l.y, l.tx, l.ty, 'orb_venom', 0.8, () => {
       this.puff(l.tx, l.ty, 'puff_venom');
       this.addPuddle(l.tx, l.ty, 0.9, 4);
-      if (Math.hypot(this.me.x - l.tx, this.me.y - l.ty) < 0.9) this.hurtMe(l.dmg, 'poison');
+      if (Math.abs(this.me.x - l.tx) < 0.9 && Math.abs(this.me.y - l.ty) < 1) this.hurtMe(l.dmg, 'poison');
     });
   }
 
   addPuddle(x, y, r, t) {
     const p = iso(x, y);
-    const img = this.s.add.image(p.x, p.y, 'puddle_0').setDepth(-5).setScale(r * 0.8).setAlpha(0.9);
+    const img = this.s.add.image(p.x, p.y, 'puddle_side').setOrigin(0.5, 1).setDepth(-10).setScale(r, 1).setAlpha(0.9);
     this.dynHazards.push({ x, y, r, t, img });
   }
 
@@ -859,20 +894,21 @@ export class Combat {
     const ak = `en_${e.t}_${k}`;
     if (e.anim !== ak) { e.anim = ak; e.spr.play(ak); }
     e.spr.setPosition(p.x, p.y + 2).setDepth(depthOf(e.x, e.y));
+    const gy = this.s.groundBelow(e.x, e.y) * 16;
     e.spr.setFlipX(e.face.x < 0);
     if (e.flash > 0) e.spr.setTintFill(0xffffff);
     else if (e.wind > 0) e.spr.setTint(0xffb0a0);
     else if (e.stun > 0) e.spr.setTint(0xb0b0ff);
     else if (e.sunder > 0) e.spr.setTint(0xffd0d0);
     else e.spr.clearTint();
-    e.shadow.setPosition(p.x, p.y).setDepth(depthOf(e.x, e.y, -2));
+    e.shadow.setPosition(p.x, gy).setDepth(depthOf(e.x, e.y, -2));
     e.bar.clear();
     if (e.hp < e.maxHp) {
       const f = Math.max(0, e.hp / e.maxHp);
       const w = e.t === 'tortoise' ? 22 : 16;
       e.bar.setDepth(90000);
-      e.bar.fillStyle(0x1b1230, 0.9).fillRect(p.x - w / 2 - 1, p.y - 25, w + 2, 4);
-      e.bar.fillStyle(0xef6550, 1).fillRect(p.x - w / 2, p.y - 24, w * f, 2);
+      e.bar.fillStyle(0x1b1230, 0.9).fillRect(p.x - w / 2 - 1, p.y - 31, w + 2, 4);
+      e.bar.fillStyle(0xef6550, 1).fillRect(p.x - w / 2, p.y - 30, w * f, 2);
     }
   }
 
@@ -891,9 +927,13 @@ export class Combat {
       h.lunge = Math.max(0, h.lunge - dt * 2.5);
       h.open = Math.max(0, h.open - dt);
       const bob = Math.sin(tt * 2 + h.i * 2.1) * 3;
-      const hp = iso(h.x, h.y);
-      const lift = h.alive ? 52 + bob - h.lunge * 18 : 12;
-      const hx = hp.x, hy = hp.y - lift + h.lunge * 14;
+      // heads sway low enough to slash; they dip further while recovering from a bite
+      h.rest = Math.max(0, (h.rest || 0) - dt);
+      const lift = h.alive ? 36 + bob - h.sy * 0.8 - h.lunge * 22 - (h.rest > 0 ? 14 : 0) : 14;
+      const hx = bp.x + h.sx * 0.9 - 30 - h.lunge * 46, hy = bp.y - lift;
+      // feet-equivalent position used for targeting
+      h.x = hx / 16; h.y = hy / 16 + CHEST;
+      h.spr.setFlipX(true);
       // neck: chain of circles from body to head
       const sx = bp.x + h.sx * 0.35, sy = bp.y - 26;
       const segs = 9;
@@ -932,17 +972,18 @@ export class Combat {
       h.open = 0.6;
       const dx = tgt.x - h.x, dy = tgt.y - h.y, base = Math.atan2(dy, dx);
       for (let k = -2; k <= 2; k++) {
-        const a = base + k * 0.22;
-        const l = { x: h.x, y: h.y, dx: Math.cos(a), dy: Math.sin(a), dmg: b.atk * 0.7 };
+        const a = base + k * 0.16;
+        const l = { x: h.x, y: h.y, dx: Math.cos(a), dy: Math.sin(a), dmg: b.atk * 0.7, lift: CHEST };
         this.enemyShot(l);
         net.ev({ k: 'eproj', ...l });
       }
     } else if (h.attack === 'bite') {
-      const tel = { kind: 'circle', x: tgt.x, y: tgt.y, r: 1.25, t: 0.85, dmg: b.atk * 1.4, head: h.i };
+      const tel = { kind: 'band', x: tgt.x, y: S.groundBelow(tgt.x, tgt.y - 0.5), r: 1.4, t: 0.85, dmg: b.atk * 1.4, head: h.i };
       this.telegraph(tel);
       net.ev({ k: 'tele', ...tel });
     } else {
-      const tel = { kind: 'circle', x: b.x, y: b.y + 0.5, r: 5.6 * (this.br.bossAoe || 1), t: 1.3, dmg: b.atk * 1.1, head: h.i, sweep: true };
+      const r = 7 * (this.br.bossAoe || 1);
+      const tel = { kind: 'band', x: b.x - r + 1, y: b.y, r, t: 1.3, dmg: b.atk * 1.1, head: h.i, sweep: true };
       this.telegraph(tel);
       net.ev({ k: 'tele', ...tel });
     }
@@ -1000,10 +1041,10 @@ export class Combat {
     if (this.runTime < 600) stat('fastClear');
     // exit portal
     S.time.delayedCall(1400, () => {
-      const pr = { t: 'portal', x: b.x, y: b.y + 2.5 };
-      S.addProp(pr);
-      S.map.interacts.push({ x: b.x, y: b.y + 2.6, r: 1.5, kind: 'leave', label: 'Return Victorious' });
-      S.map.lights.push({ x: b.x, y: b.y + 2.5, z: 26, color: 0xd36cff, r: 110, i: 0.9, flicker: 0.1 });
+      const px = b.x - 9;
+      S.addProp({ t: 'portal', x: px, y: b.y });
+      S.map.interacts.push({ x: px, y: b.y, r: 1.8, kind: 'leave', label: 'Return Victorious' });
+      const gl = S.add.image(px * 16, (b.y - 2) * 16, 'light').setTint(0xd36cff).setBlendMode(Phaser.BlendModes.ADD).setScale(1.2).setAlpha(0.5).setDepth(85300); void gl;
       G.ui.banner('VICTORY', 'The Warden falls. Step into the portal to return.', true);
       this.victory = true;
       playMusic('village');
@@ -1014,7 +1055,7 @@ export class Combat {
     const S = this.s;
     const g = S.add.graphics().setDepth(-4);
     this.telegraphs.push({ ...tel, g, t0: tel.t });
-    if (tel.sweep) G.ui.toast('TAIL SWEEP! Dodge-roll through it or get clear!', 'warn');
+    if (tel.sweep) G.ui.toast('TAIL SWEEP! Jump onto a ledge or dodge-roll through it!', 'warn');
   }
 
   updateTelegraphs(dt) {
@@ -1023,15 +1064,18 @@ export class Combat {
       const p = iso(tl.x, tl.y);
       const f = 1 - tl.t / tl.t0;
       tl.g.clear();
-      tl.g.lineStyle(1, 0xff4a4a, 0.9).strokeEllipse(p.x, p.y, tl.r * 32 * 1.0, tl.r * 16 * 1.0);
-      tl.g.fillStyle(0xff3030, 0.18 + f * 0.2).fillEllipse(p.x, p.y, tl.r * 32 * f, tl.r * 16 * f);
+      // ground band warning (side view)
+      const w = tl.r * 32;
+      tl.g.fillStyle(0xff3030, 0.12 + f * 0.18).fillRect(p.x - w / 2, p.y - 26, w, 26);
+      tl.g.fillStyle(0xff3030, 0.5 + f * 0.4).fillRect(p.x - (w / 2) * f, p.y - 3, w * f, 3);
+      tl.g.lineStyle(1, 0xff6a5a, 0.9).strokeRect(p.x - w / 2, p.y - 26, w, 26);
       if (tl.t <= 0) {
         tl.g.destroy();
         const me = this.me;
-        const d = Math.hypot(me.x - tl.x, me.y - tl.y);
-        if (d < tl.r) this.hurtMe(tl.dmg, 'boss');
+        // only grounded heroes inside the band are hit: jumping clears it
+        if (Math.abs(me.x - tl.x) < tl.r && me.y > tl.y - 0.9) this.hurtMe(tl.dmg, 'boss');
         if (tl.sweep) { this.s.shake(5, 0.3); this.ring(tl.x, tl.y, 'ring_slam', 2.2); sfx.boom(); }
-        else { this.puff(tl.x, tl.y, 'puff_venom'); if (this.boss) { const h = this.boss.heads[tl.head]; if (h) { h.lunge = 1; h.open = 0.4; } } sfx.hit(); }
+        else { this.puff(tl.x, tl.y, 'puff_venom'); if (this.boss) { const h = this.boss.heads[tl.head]; if (h) { h.lunge = 1; h.open = 0.4; h.rest = 1.6; } } sfx.hit(); }
       }
     }
     this.telegraphs = this.telegraphs.filter((t) => t.t > 0);
@@ -1044,8 +1088,9 @@ export class Combat {
   spawnProj(o) {
     const S = this.s;
     const p = iso(o.x, o.y);
-    o.img = S.add.image(p.x, p.y - 10, o.tex).setScale(o.scale || 1);
-    if (o.tex === 'bullet' || o.tex === 'arrow') o.img.setRotation(Math.atan2((o.dx + o.dy) * 8, (o.dx - o.dy) * 16));
+    o.lift = o.lift ?? CHEST;
+    o.img = S.add.image(p.x, p.y - o.lift * 16, o.tex).setScale(o.scale || 1);
+    if (o.tex === 'bullet' || o.tex === 'arrow') o.img.setRotation(Math.atan2(o.dy, o.dx));
     if (o.light || o.tex.startsWith('orb')) o.img.setBlendMode(Phaser.BlendModes.ADD);
     o.dist = 0;
     o.hit = new Set();
@@ -1060,22 +1105,22 @@ export class Combat {
       const step = pr.speed * dt;
       pr.x += pr.dx * step; pr.y += pr.dy * step; pr.dist += step;
       const p = iso(pr.x, pr.y);
-      pr.img.setPosition(p.x, p.y - 10).setDepth(depthOf(pr.x, pr.y, 3));
-      let dead = pr.dist > pr.range || S.isSolid(pr.x, pr.y) && !S.blockers.has(Math.floor(pr.x) + ',' + Math.floor(pr.y)) && S.map.ground[Math.floor(pr.y)]?.[Math.floor(pr.x)] === 'W';
+      pr.img.setPosition(p.x, p.y - pr.lift * 16).setDepth(depthOf(pr.x, pr.y, 3));
+      let dead = pr.dist > pr.range || S.isSolid(pr.x, pr.y - pr.lift);
       if (pr.owner === 'me') {
         for (const t of this.targets()) {
           const key = t.head ? 'h' + t.head.i : t.e.id;
           if (pr.hit.has(key)) continue;
-          if (Math.hypot(t.x - pr.x, t.y - pr.y) < t.r + 0.25) {
+          if (hits(t, pr.x, pr.y - pr.lift + 0.6, 0.3, 0.7)) {
             pr.hit.add(key);
             this.damageTarget(t, pr.dmg, { crit: pr.crit, from: this.me, kb: 0.15, bossMult: pr.bossMult });
             if (!pr.pierce) { dead = true; break; }
           }
         }
-        for (const b of [...(S.breakables?.values() || [])]) if (Math.hypot(b.x - pr.x, b.y - pr.y) < 0.45) { this.hitBreakable(b); if (!pr.pierce) dead = true; }
+        for (const b of [...(S.breakables?.values() || [])]) if (Math.abs(b.x - pr.x) < 0.5 && pr.y - pr.lift < b.y && pr.y - pr.lift > b.y - 1.2) { this.hitBreakable(b); if (!pr.pierce) dead = true; }
       } else if (pr.owner === 'enemy') {
         const me = this.me;
-        if (!me.down && !me.dead && Math.hypot(me.x - pr.x, me.y - pr.y) < 0.4) {
+        if (!me.down && !me.dead && Math.abs(me.x - pr.x) < 0.45 && Math.abs((me.y - CHEST) - (pr.y - pr.lift)) < 1.1) {
           this.hurtMe(pr.dmg, 'poison');
           if (pr.poison && me.iframes <= 0) me.status.poison = 2.5;
           dead = true;
@@ -1090,14 +1135,14 @@ export class Combat {
   lob(x0, y0, x1, y1, tex, dur, done) {
     const S = this.s;
     const img = S.add.image(0, 0, tex).setDepth(95000);
-    if (tex === 'arrow') img.setRotation(Math.PI / 2); else img.setBlendMode(Phaser.BlendModes.ADD);
+    if (tex === 'arrow') img.setRotation(Math.PI / 2); else if (tex.startsWith('orb')) img.setBlendMode(Phaser.BlendModes.ADD);
     const o = { t: 0 };
     S.tweens.add({
       targets: o, t: 1, duration: dur * 1000,
       onUpdate: () => {
         const x = x0 + (x1 - x0) * o.t, y = y0 + (y1 - y0) * o.t;
         const p = iso(x, y);
-        img.setPosition(p.x, p.y - 10 - Math.sin(o.t * Math.PI) * 28);
+        img.setPosition(p.x, p.y - 12 * (1 - o.t) - Math.sin(o.t * Math.PI) * 40);
       },
       onComplete: () => { img.destroy(); done && done(); },
     });
@@ -1108,7 +1153,7 @@ export class Combat {
     this.s.shake(4, 0.2);
     this.puff(x, y, 'puff_fire', 1.6);
     this.ring(x, y, 'ring_slam');
-    for (const t of this.targets()) if (Math.hypot(t.x - x, t.y - y) < r + t.r) this.damageTarget(t, dmg, { crit, aoe: true, from: { x, y, cls: 'gunman' }, kb: 0.4 });
+    for (const t of this.targets()) if (hits(t, x, y, r, 2)) this.damageTarget(t, dmg, { crit, aoe: true, from: { x, y, cls: 'gunman' }, kb: 0.4 });
     for (const b of [...(this.s.breakables?.values() || [])]) if (Math.hypot(b.x - x, b.y - y) < r) this.hitBreakable(b);
   }
 
@@ -1117,12 +1162,12 @@ export class Combat {
     const arrows = kind === 'arrow';
     for (let k = 0; k < (arrows ? 10 : 7); k++) {
       S.time.delayedCall(150 + k * (arrows ? 90 : 160), () => {
-        const px = x + rand(-1.3, 1.3), py = y + rand(-1.3, 1.3);
-        this.lob(px - 0.4, py - 1.6, px, py, arrows ? 'arrow' : 'orb_fire', arrows ? 0.18 : 0.22, () => {
+        const px = x + rand(-1.6, 1.6), py = S.groundBelow(px, y - 1.5);
+        this.lob(px - 0.6, py - 5, px, py, arrows ? 'arrow' : 'orb_fire', arrows ? 0.18 : 0.22, () => {
           this.puff(px, py, arrows ? 'puff_dust' : 'puff_fire', arrows ? 0.6 : 1.1);
           if (arrows) sfx.hit(); else sfx.boom();
           if (!mine) return;
-          for (const t of this.targets()) if (Math.hypot(t.x - px, t.y - py) < 1.1 + t.r) this.damageTarget(t, dmg, { aoe: true, from: this.me });
+          for (const t of this.targets()) if (hits(t, px, py, 1.1, 3)) this.damageTarget(t, dmg, { aoe: true, from: this.me });
           for (const b of [...(S.breakables?.values() || [])]) if (Math.hypot(b.x - px, b.y - py) < 1) this.hitBreakable(b);
         });
       });
@@ -1133,8 +1178,8 @@ export class Combat {
     const S = this.s;
     const p = iso(x, y);
     const d = { kind, x, y, owner, t: kind === 'sentry' ? 15 : 20, cd: 0.4 };
-    if (kind === 'sentry') d.img = S.add.sprite(p.x, p.y + 2, 'sentry').setOrigin(0.5, 1).play('sentry').setDepth(depthOf(x, y));
-    else d.img = S.add.image(p.x, p.y, 'snare').setDepth(-3);
+    if (kind === 'sentry') { d.img = S.add.image(p.x, p.y + 1, 'pk_turret').setOrigin(0.5, 1).setDepth(depthOf(x, y)); S.tweens.add({ targets: d.img, y: p.y - 1, duration: 500, yoyo: true, repeat: -1 }); }
+    else d.img = S.add.image(p.x, p.y + 2, 'pk_snare').setOrigin(0.5, 1).setDepth(depthOf(x, y, -3));
     this.devices.push(d);
   }
 
@@ -1145,12 +1190,12 @@ export class Combat {
         d.cd -= dt;
         if (d.cd <= 0) {
           let best = null, bd = 6.5;
-          for (const t of this.targets()) { const dd = Math.hypot(t.x - d.x, t.y - d.y); if (dd < bd) { bd = dd; best = t; } }
+          for (const t of this.targets()) { const dd = Math.hypot(t.x - d.x, (t.y - d.y) * 0.6); if (dd < bd) { bd = dd; best = t; } }
           if (best) {
             d.cd = 0.55;
             const dx = best.x - d.x, dy = best.y - d.y, l = Math.hypot(dx, dy) || 1;
-            this.spawnProj({ x: d.x, y: d.y, dx: dx / l, dy: dy / l, speed: 13, range: 7, dmg: this.me.stats.spell * 0.55, owner: 'me', tex: 'bullet' });
-            d.img.setFlipX(dx - dy < 0);
+            this.spawnProj({ x: d.x, y: d.y, dx: dx / l, dy: dy / l, speed: 13, range: 8, dmg: this.me.stats.spell * 0.55, owner: 'me', tex: 'bullet', lift: 1.2 });
+            d.img.setFlipX(dx > 0);
           }
         }
       }
@@ -1161,7 +1206,7 @@ export class Combat {
 
   slashFx(x, y, flip, scale = 1) {
     const p = iso(x, y);
-    const s = this.s.add.sprite(p.x, p.y - 10, 'slash').setDepth(depthOf(x, y, 4)).setFlipX(flip).setScale(scale).setBlendMode(Phaser.BlendModes.ADD);
+    const s = this.s.add.sprite(p.x, p.y - CH, 'slash').setDepth(depthOf(x, y, 4)).setFlipX(flip).setScale(scale).setBlendMode(Phaser.BlendModes.ADD);
     s.play('slash');
     s.once('animationcomplete', () => s.destroy());
   }
@@ -1183,7 +1228,7 @@ export class Combat {
 
   floatText(x, y, text, color = '#ffffff', size = 8) {
     const p = iso(x, y);
-    const t = this.s.add.text(p.x + rand(-4, 4), p.y - 26, text, {
+    const t = this.s.add.text(p.x + rand(-4, 4), p.y - 40, text, {
       fontFamily: '"Pixelify Sans", monospace', fontSize: size + 'px', color, stroke: '#1b1230', strokeThickness: 3, resolution: 4,
     }).setOrigin(0.5).setDepth(99000);
     this.s.tweens.add({ targets: t, y: t.y - 16, alpha: { from: 1, to: 0 }, duration: 750, ease: 'Cubic.easeOut', onComplete: () => t.destroy() });
@@ -1195,7 +1240,8 @@ export class Combat {
       const p = iso(x, y);
       const c = S.add.sprite(p.x, p.y - 6, 'coin').play({ key: 'coin', startFrame: i % 4 }).setDepth(96000);
       const ang = Math.random() * TAU;
-      this.pickups.push({ img: c, vx: Math.cos(ang) * 40, vy: -50 - Math.random() * 30, t: 0, x: p.x, y: p.y - 6, ground: p.y + 2 });
+      this.pickups.push({ img: c, vx: (Math.random() - 0.5) * 120, vy: -70 - Math.random() * 40, t: 0, x: p.x, y: p.y - 10, ground: p.y - 2 });
+      void ang;
     }
     if (n) S.time.delayedCall(350, () => sfx.coin());
   }
@@ -1228,7 +1274,7 @@ export class Combat {
         c.x += c.vx * dt; c.y += c.vy * dt;
         if (c.y > c.ground) { c.y = c.ground; c.vy *= -0.4; c.vx *= 0.6; }
       } else {
-        const dx = mp.x - c.x, dy = mp.y - 10 - c.y;
+        const dx = mp.x - c.x, dy = mp.y - CH - c.y;
         const d = Math.hypot(dx, dy);
         const sp = 140 + c.t * 300;
         c.x += (dx / (d || 1)) * Math.min(d, sp * dt); c.y += (dy / (d || 1)) * Math.min(d, sp * dt);

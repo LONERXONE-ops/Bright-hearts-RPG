@@ -38,12 +38,12 @@ export async function run() {
     if (mode === 'boss') {
       const r = S.map.bossRoom;
       for (const g of S.combat.gates) S.combat.openGate(g, true);
-      S.me.x = r.x0 + 7.5; S.me.y = r.y0 + 11; 
+      S.me.x = S.combat.boss.heads[0].x - 4; S.me.y = 12; 
     } else {
       // walk into the first combat room and fight
       const r = S.map.rooms[1];
       for (const g of S.combat.gates.slice(0, 1)) S.combat.openGate(g, true);
-      S.me.x = r.x0 + 5; S.me.y = r.y0 + 5;
+      S.me.x = r.x0 + 5; S.me.y = 12;
     }
     S.me.hp = 99999; S.me.stats.maxHp = 99999;
     const t0 = Date.now();

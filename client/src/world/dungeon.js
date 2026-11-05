@@ -1,7 +1,8 @@
-// Procedural dungeon: stitches 5-8 room templates (from a pool of 12) into a chain of
-// floating ruins connected by stone bridges, ending at a fixed Boss Arena.
+// Procedural side-view dungeon: a start hall, 5-8 combat chambers (picked from a pool
+// of 12 templates) and the fixed Boss Arena, chained left to right. Each chamber is
+// sealed by a thorn gate that opens when its enemies are cleared.
 import { rng } from '../art/pix.js';
-import { blankMap, setG, getG, fillRect, addWall } from './maps.js';
+import { blankMap, setG, getG, fillRect, backRect, platform } from './maps.js';
 
 export const DUNGEONS = {
   ruins: { name: 'Overgrown Ruins', theme: 'ruins', boss: 'hydra', set: 'viper', level: 1, unlocked: true },
@@ -23,209 +24,176 @@ export function bracket(size) {
   return { hp: 8, poise: 6.5, mobs: 2, name: 'Full Guild Raid', bossTurn: 1, bossAoe: 1.2 };
 }
 
-const RS = 11;       // room interior size
-const GAP = 4;       // bridge length between room blocks
+const H = 17, G = 14; // map height, floor row
+const RW = 30;        // chamber width
 
-function inCross(lx, ly, size) {
-  const c = Math.floor(size / 2);
-  return Math.abs(lx - c) <= 1 || Math.abs(ly - c) <= 1;
-}
-
-// Each template decorates a room. (ox, oy) = interior origin. Returns preferred enemy mix.
+// Each template sculpts a chamber in [ox, ox+RW) and returns its enemy mix.
+// add.spot(x) gives a standing y for column x.
 const TEMPLATES = {
-  courtyard(m, ox, oy, r, add) {
-    for (const [lx, ly] of [[2, 2], [8, 2], [2, 8], [8, 8]]) add.prop('pillar', ox + lx + 0.5, oy + ly + 0.5, { broken: r() < 0.5, solid: [[ox + lx, oy + ly]] });
-    patch(m, ox, oy, 'g', r, 0.35);
-    scatterBreakables(add, ox, oy, r, 4);
+  courtyard(m, ox, r, add) {
+    platform(m, ox + 5, ox + 10, G - 4); platform(m, ox + 19, ox + 24, G - 4); platform(m, ox + 12, ox + 17, G - 7);
+    add.prop('pillar', ox + 3, G, { bg: true }); add.prop('pillar', ox + 26, G, { bg: true, broken: true });
+    add.brk(ox + 14, G - 7, 'chest'); add.brk(ox + 8, G); add.brk(ox + 22, G);
     return ['viper', 'viper', 'spitter'];
   },
-  pond(m, ox, oy, r, add) {
-    for (let ly = 2; ly <= 8; ly++) for (let lx = 2; lx <= 8; lx++) if (!inCross(lx, ly, RS)) setG(m, ox + lx, oy + ly, 'p');
-    for (const [lx, ly] of [[1, 1], [9, 9], [1, 9], [9, 1]]) add.prop('fern', ox + lx + 0.5, oy + ly + 0.5, {});
-    scatterBreakables(add, ox, oy, r, 2, true);
+  pond(m, ox, r, add) {
+    fillRect(m, ox + 9, G, ox + 20, G + 1, '.'); add.pool(ox + 9, ox + 20, G + 1);
+    platform(m, ox + 11, ox + 13, G - 2); platform(m, ox + 16, ox + 18, G - 2);
+    add.prop('fern', ox + 6, G); add.prop('fern', ox + 23, G);
+    add.brk(ox + 4, G); add.brk(ox + 25, G);
     return ['spitter', 'viper', 'viper'];
   },
-  colonnade(m, ox, oy, r, add) {
-    for (let i = 1; i <= 9; i += 2) {
-      add.prop('pillar', ox + 3 + 0.5, oy + i + 0.5, { broken: r() < 0.35, solid: [[ox + 3, oy + i]] });
-      add.prop('pillar', ox + 7 + 0.5, oy + i + 0.5, { broken: r() < 0.35, solid: [[ox + 7, oy + i]] });
-    }
-    scatterBreakables(add, ox, oy, r, 3);
+  colonnade(m, ox, r, add) {
+    for (let i = 0; i < 4; i++) platform(m, ox + 4 + i * 6, ox + 7 + i * 6, G - 3 - (i % 2) * 3);
+    for (const x of [6, 12, 18, 24]) add.prop('pillar', ox + x, G, { bg: true, broken: r() < 0.4 });
+    add.brk(ox + 20, G - 6); add.brk(ox + 10, G);
     return ['viper', 'spitter', 'tortoise'];
   },
-  garden(m, ox, oy, r, add) {
-    patch(m, ox, oy, 'g', r, 0.85);
-    for (const [lx, ly] of [[2, 2], [8, 3], [2, 8], [8, 8]]) add.prop('jtree', ox + lx + 0.5, oy + ly + 0.5, { solid: [[ox + lx, oy + ly]] });
-    for (let i = 0; i < 5; i++) { const [lx, ly] = freeSpot(r); add.prop('bush', ox + lx + 0.5, oy + ly + 0.5, {}); }
+  garden(m, ox, r, add) {
+    fillRect(m, ox + 11, G - 1, ox + 18, G - 1, '#');
+    platform(m, ox + 4, ox + 8, G - 4); platform(m, ox + 21, ox + 25, G - 4);
+    add.prop('jtree', ox + 6, G, { bg: true }); add.prop('jtree', ox + 23, G, { bg: true });
+    for (const x of [9, 14, 20]) add.prop('bush', ox + x, x === 14 ? G - 1 : G);
     return ['mandrake', 'viper', 'viper', 'spitter'];
   },
-  toxic(m, ox, oy, r, add) {
-    patch(m, ox, oy, 'm', r, 0.7);
-    for (const [lx, ly] of [[2.5, 2.5], [8, 2.5], [2.5, 8], [8, 8.2]]) add.hazard('poison', ox + lx, oy + ly, 1.2);
-    scatterBreakables(add, ox, oy, r, 3);
+  toxic(m, ox, r, add) {
+    for (const x of [7, 15, 23]) add.hazard('poison', ox + x, G, 1.4);
+    platform(m, ox + 3, ox + 6, G - 3); platform(m, ox + 11, ox + 13, G - 5); platform(m, ox + 18, ox + 20, G - 3); platform(m, ox + 24, ox + 27, G - 5);
+    add.brk(ox + 12, G - 5); add.brk(ox + 25, G - 5);
     return ['spitter', 'spitter', 'viper', 'mandrake'];
   },
-  shrine(m, ox, oy, r, add) {
-    for (const [lx, ly] of [[2, 2], [8, 2], [2, 8]]) add.prop('statue', ox + lx + 0.5, oy + ly + 0.5, { solid: [[ox + lx, oy + ly]] });
-    add.breakable('chest', ox + 8.5, oy + 8.5);
-    for (const [lx, ly] of [[1, 5], [9, 5]]) add.light(ox + lx + 0.5, oy + ly + 0.5);
+  shrine(m, ox, r, add) {
+    fillRect(m, ox + 12, G - 2, ox + 17, G - 1, '#');
+    platform(m, ox + 13, ox + 16, G - 6);
+    add.brk(ox + 14.5, G - 6, 'chest');
+    add.prop('statue', ox + 5, G, { bg: true }); add.prop('statue', ox + 24, G, { bg: true });
+    add.light(ox + 8, G); add.light(ox + 21, G);
     return ['tortoise', 'viper', 'mandrake'];
   },
-  rubble(m, ox, oy, r, add) {
-    for (const [lx, ly] of [[2, 2], [3, 2], [2, 3], [8, 7], [8, 8], [7, 8], [8, 2], [2, 8]]) addWall(m, ox + lx, oy + ly);
-    scatterBreakables(add, ox, oy, r, 4);
+  rubble(m, ox, r, add) {
+    fillRect(m, ox + 7, G - 2, ox + 9, G - 1, '#'); fillRect(m, ox + 18, G - 3, ox + 20, G - 1, '#'); fillRect(m, ox + 13, G - 1, ox + 14, G - 1, '#');
+    add.prop('rubble', ox + 4, G); add.prop('rubble', ox + 25, G);
+    add.brk(ox + 8, G - 2); add.brk(ox + 19, G - 3); add.brk(ox + 24, G);
     return ['viper', 'viper', 'spitter', 'tortoise'];
   },
-  moat(m, ox, oy, r, add) {
-    for (let ly = 1; ly <= 9; ly++) for (let lx = 1; lx <= 9; lx++) {
-      const ring = lx === 1 || lx === 9 || ly === 1 || ly === 9;
-      if (ring && !inCross(lx, ly, RS)) setG(m, ox + lx, oy + ly, 'p');
-    }
-    add.breakable('chest', ox + 3.5, oy + 3.5);
+  moat(m, ox, r, add) {
+    fillRect(m, ox + 6, G, ox + 23, G + 1, '.'); add.pool(ox + 6, ox + 23, G + 1);
+    platform(m, ox + 6, ox + 23, G - 2);
+    add.brk(ox + 15, G - 2, 'chest');
     return ['spitter', 'tortoise', 'viper'];
   },
-  overgrowth(m, ox, oy, r, add) {
-    patch(m, ox, oy, 'g', r, 0.6);
-    for (let i = 0; i < 7; i++) { const [lx, ly] = freeSpot(r); add.prop('fern', ox + lx + 0.5, oy + ly + 0.5, {}); }
-    add.prop('jtree', ox + 1.5, oy + 1.5, { solid: [[ox + 1, oy + 1]] });
-    add.prop('jtree', ox + 9.5, oy + 9.5, { solid: [[ox + 9, oy + 9]] });
-    scatterBreakables(add, ox, oy, r, 3);
+  overgrowth(m, ox, r, add) {
+    for (let i = 0; i < 6; i++) platform(m, ox + 2 + i * 4 + Math.floor(r() * 2), ox + 4 + i * 4, G - 3 - Math.floor(r() * 4));
+    for (const x of [5, 11, 17, 23]) add.prop('fern', ox + x, G);
+    add.prop('jtree', ox + 27, G, { bg: true });
+    add.brk(ox + 9, G); add.brk(ox + 20, G);
     return ['mandrake', 'mandrake', 'viper'];
   },
-  cistern(m, ox, oy, r, add) {
-    for (const [x0, y0] of [[1, 1], [7, 1], [1, 7], [7, 7]]) fillRect(m, ox + x0, oy + y0, ox + x0 + 2, oy + y0 + 2, 'w');
-    scatterBreakables(add, ox, oy, r, 5);
+  cistern(m, ox, r, add) {
+    fillRect(m, ox + 4, G - 2, ox + 9, G - 1, '#'); fillRect(m, ox + 20, G - 2, ox + 25, G - 1, '#');
+    platform(m, ox + 12, ox + 17, G - 5);
+    for (const x of [6, 8, 22, 24]) add.brk(ox + x, G - 2);
+    add.brk(ox + 14, G - 5);
     return ['spitter', 'spitter', 'viper'];
   },
-  den(m, ox, oy, r, add) {
-    patch(m, ox, oy, 'g', r, 0.5);
-    for (let i = 0; i < 4; i++) { const [lx, ly] = freeSpot(r); add.prop('rock', ox + lx + 0.5, oy + ly + 0.5, { solid: [[ox + lx, oy + ly]] }); }
+  den(m, ox, r, add) {
+    for (const x of [6, 14, 22]) fillRect(m, ox + x, G - 1, ox + x + 1, G - 1, '#');
+    add.prop('rubble', ox + 10, G); add.prop('rubble', ox + 18, G);
+    platform(m, ox + 9, ox + 12, G - 5); platform(m, ox + 17, ox + 20, G - 5);
     return ['tortoise', 'tortoise', 'viper'];
   },
-  nest(m, ox, oy, r, add) {
-    patch(m, ox, oy, 'd', r, 0.4);
-    scatterBreakables(add, ox, oy, r, 6);
+  nest(m, ox, r, add) {
+    platform(m, ox + 3, ox + 12, G - 4); platform(m, ox + 17, ox + 26, G - 4);
+    for (let i = 0; i < 6; i++) add.brk(ox + 4 + i * 4, i % 2 ? G - 4 : G);
     return ['viper', 'viper', 'viper', 'viper', 'spitter'];
   },
 };
-
-function freeSpot(r) {
-  for (;;) {
-    const lx = 1 + Math.floor(r() * (RS - 2)), ly = 1 + Math.floor(r() * (RS - 2));
-    if (!inCross(lx, ly, RS)) return [lx, ly];
-  }
-}
-function patch(m, ox, oy, code, r, amount) {
-  for (let ly = 0; ly < RS; ly++) for (let lx = 0; lx < RS; lx++) {
-    const v = Math.sin((lx + ox) * 0.9 + r() * 0.5) + Math.cos((ly + oy) * 0.8) + r() * 0.8;
-    if (v > 2.2 - amount * 2.4 && getG(m, ox + lx, oy + ly) === 's') setG(m, ox + lx, oy + ly, code);
-  }
-}
-function scatterBreakables(add, ox, oy, r, n, noCrate) {
-  for (let i = 0; i < n; i++) {
-    const [lx, ly] = freeSpot(r);
-    add.breakable(noCrate || r() < 0.6 ? 'jar' : 'crate', ox + lx + 0.5, oy + ly + 0.5);
-  }
-}
 
 export function generateDungeon(seed, dungeonKey = 'ruins', partySize = 1) {
   const r = rng(seed);
   const info = DUNGEONS[dungeonKey];
   const br = bracket(partySize);
-  const nRooms = 5 + Math.floor(r() * 4); // 5..8 combat rooms
-  // layout positions (block coordinates)
-  const blocks = [];
-  let bx = 2, by = 2;
-  const dirs = [];
-  for (let i = 0; i < nRooms + 2; i++) {
-    const big = i === nRooms + 1;
-    blocks.push({ bx, by, size: big ? 15 : RS, kind: i === 0 ? 'start' : big ? 'boss' : 'room' });
-    const d = r() < 0.5 ? 'x' : 'y';
-    dirs.push(d);
-    const step = (big ? 15 : RS) + 2 + GAP;
-    if (d === 'x') bx += RS + 2 + GAP; else by += RS + 2 + GAP;
-    void step;
-  }
-  // boss arena is bigger: shift so the shared side centres line up
-  const last = blocks[blocks.length - 1];
-  if (dirs[dirs.length - 2] === 'x') last.by -= 2; else last.bx -= 2;
-  let W = 0, H = 0;
-  for (const b of blocks) { W = Math.max(W, b.bx + b.size + 4); H = Math.max(H, b.by + b.size + 4); }
+  const nRooms = 5 + Math.floor(r() * 4);
+  const START_W = 20, BOSS_W = 38;
+  const W = START_W + nRooms * RW + BOSS_W + 2;
   const m = blankMap('dungeon', info.theme, W, H);
   m.dungeon = dungeonKey;
   m.seed = seed;
-  let eid = 1, bid = 1;
-  const templateKeys = Object.keys(TEMPLATES);
-  const pool = templateKeys.slice().sort(() => r() - 0.5);
-
-  blocks.forEach((b, i) => {
-    const ox = b.bx + 1, oy = b.by + 1, S = b.size;
-    fillRect(m, ox, oy, ox + S - 1, oy + S - 1, 's');
-    for (let k = -1; k <= S; k++) { addWall(m, ox + k, oy - 1); addWall(m, ox + k, oy + S); addWall(m, ox - 1, oy + k); addWall(m, ox + S, oy + k); }
-    const room = { i, kind: b.kind, x0: ox, y0: oy, x1: ox + S - 1, y1: oy + S - 1, cleared: b.kind === 'start', enemies: [] };
-    m.rooms.push(room);
-    const add = {
-      prop: (t, x, y, o) => m.props.push({ t, x, y, ...o }),
-      breakable: (t, x, y) => m.breakables.push({ id: bid++, t, x, y, room: i }),
-      hazard: (t, x, y, rad) => m.hazards.push({ t, x, y, r: rad }),
-      light: (x, y) => { m.props.push({ t: 'brazier', x, y, solid: [[Math.floor(x), Math.floor(y)]] }); m.lights.push({ x, y, z: 22, color: 0xff9a40, r: 90, i: 0.9, flicker: 0.18 }); },
-    };
-    if (b.kind === 'start') {
-      patch(m, ox, oy, 'g', r, 0.5);
-      add.prop('portal', ox + 5.5, oy + 2.5, { solid: [] });
-      m.interacts.push({ x: ox + 5.5, y: oy + 3, r: 1.4, kind: 'leave', label: 'Return to Village' });
-      m.lights.push({ x: ox + 5.5, y: oy + 2.5, z: 26, color: 0xd36cff, r: 100, i: 0.8, flicker: 0.1 });
-      add.light(ox + 1.5, oy + 9.5); add.light(ox + 9.5, oy + 1.5);
-      m.spawn = { x: ox + 5.5, y: oy + 6.5 };
-      scatterBreakables(add, ox, oy, r, 2);
-    } else if (b.kind === 'boss') {
-      patch(m, ox, oy, 'g', r, 0.4);
-      patch(m, ox, oy, 'm', r, 0.3);
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
-        const x = ox + 7 + Math.cos(a) * 6, y = oy + 7 + Math.sin(a) * 6;
-        add.prop('pillar', Math.floor(x) + 0.5, Math.floor(y) + 0.5, { broken: k % 3 === 0, solid: [[Math.floor(x), Math.floor(y)]] });
-      }
-      add.light(ox + 1.5, oy + 1.5); add.light(ox + 13.5, oy + 1.5); add.light(ox + 1.5, oy + 13.5); add.light(ox + 13.5, oy + 13.5);
-      m.boss = { id: eid++, t: info.boss, x: ox + 7.5, y: oy + 6.5, room: i };
-      room.enemies.push(m.boss.id);
-      m.bossRoom = room;
-    } else {
-      const key = pool[(i - 1) % pool.length];
-      room.template = key;
-      const mix = TEMPLATES[key](m, ox, oy, r, add);
-      // corner braziers in most rooms (moody lighting)
-      if (r() < 0.7) add.light(ox + 0.5, oy + 0.5);
-      if (r() < 0.5) add.light(ox + S - 0.5, oy + S - 0.5);
-      const budget = Math.round((3 + i * 0.7) * br.mobs);
-      for (let k = 0; k < budget; k++) {
-        const t = mix[k % mix.length];
-        let lx, ly, tries = 0;
-        do { lx = 1 + r() * (S - 2); ly = 1 + r() * (S - 2); tries++; } while (tries < 30 && !['s', 'g', 'm', 'd'].includes(getG(m, Math.floor(ox + lx), Math.floor(oy + ly))));
-        const e = { id: eid++, t, x: ox + lx, y: oy + ly, room: i };
-        m.enemies.push(e);
-        room.enemies.push(e.id);
-      }
-    }
-  });
-
-  // bridges between consecutive rooms + gates
-  for (let i = 0; i < blocks.length - 1; i++) {
-    const a = blocks[i], b = blocks[i + 1];
-    const d = dirs[i];
-    if (d === 'x') {
-      const cy = a.by + 1 + Math.floor(a.size / 2);
-      const xs = a.bx + a.size + 1, xe = b.bx;
-      for (let x = xs; x <= xe; x++) for (let y = cy - 1; y <= cy + 1; y++) { m.walls.delete(x + ',' + y); setG(m, x, y, 'b'); }
-      m.rooms[i].gate = { tiles: [[xs, cy - 1], [xs, cy], [xs, cy + 1]], dir: 'x' };
-    } else {
-      const cx = a.bx + 1 + Math.floor(a.size / 2);
-      const ys = a.by + a.size + 1, ye = b.by;
-      for (let y = ys; y <= ye; y++) for (let x = cx - 1; x <= cx + 1; x++) { m.walls.delete(x + ',' + y); setG(m, x, y, 'b'); }
-      m.rooms[i].gate = { tiles: [[cx - 1, ys], [cx, ys], [cx + 1, ys]], dir: 'y' };
+  fillRect(m, 0, G, W - 1, H - 1, '#');
+  fillRect(m, 0, 0, W - 1, 1, '#');
+  fillRect(m, 0, 0, 1, H - 1, '#'); fillRect(m, W - 2, 0, W - 1, H - 1, '#');
+  backRect(m, 2, 2, W - 3, G + 1);
+  // crumbling holes in the back wall reveal the jungle beyond
+  for (let x = 6; x < W - 10; x += 9 + Math.floor(r() * 8)) {
+    const w = 4 + Math.floor(r() * 5), top = 2 + Math.floor(r() * 2), bot = top + 3 + Math.floor(r() * 4);
+    for (let y = top; y <= bot; y++) for (let k = 0; k < w; k++) {
+      const edge = (k === 0 || k === w - 1) && r() < 0.5;
+      if (!edge) m.back[y][x + k] = 0;
     }
   }
-  m.ambient = { dark: 0.5, ambientColor: 0x5a7a70, tint: 0xd8ffe0, particles: 'fireflies', vignette: 0.6, music: 'ruins', fog: 0x0a1814 };
+  let eid = 1, bid = 1;
+  const pool = Object.keys(TEMPLATES).sort(() => r() - 0.5);
+
+  const makeAdd = (roomIndex) => ({
+    prop: (t, x, y, o = {}) => m.props.push({ t, x, y, ...o }),
+    brk: (x, y, t) => m.breakables.push({ id: bid++, t: t || (r() < 0.45 ? 'jar' : r() < 0.6 ? 'crate' : 'totem'), x, y, room: roomIndex }),
+    hazard: (t, x, y, rad) => m.hazards.push({ t, x, y, r: rad }),
+    pool: (x0, x1, y) => m.pools.push({ x0, x1: x1 + 1, y }),
+    light: (x, y) => { m.props.push({ t: 'brazier', x, y }); m.lights.push({ x, y: y - 2.4, color: 0xff9a40, r: 90, i: 0.9, flicker: 0.18 }); },
+  });
+  const wallWithDoor = (x) => { fillRect(m, x, 2, x + 1, G - 4, '#'); };
+
+  // ---- start hall
+  const start = { i: 0, kind: 'start', x0: 2, x1: START_W - 1, cleared: true, enemies: [] };
+  m.rooms.push(start);
+  m.props.push({ t: 'portal', x: 5, y: G });
+  m.interacts.push({ x: 5, y: G, r: 1.6, kind: 'leave', label: 'Return to Village' });
+  m.lights.push({ x: 5, y: G - 3, color: 0xd36cff, r: 100, i: 0.8, flicker: 0.1 });
+  makeAdd(0).light(10, G); makeAdd(0).light(16, G);
+  m.breakables.push({ id: bid++, t: 'jar', x: 13, y: G, room: 0 });
+  m.spawn = { x: 8, y: G };
+  wallWithDoor(START_W - 1);
+  start.gate = null;
+
+  // ---- combat chambers
+  let ox = START_W + 1;
+  for (let i = 1; i <= nRooms; i++) {
+    const room = { i, kind: 'room', x0: ox, x1: ox + RW - 2, cleared: false, enemies: [] };
+    const key = pool[(i - 1) % pool.length];
+    room.template = key;
+    const add = makeAdd(i);
+    const mix = TEMPLATES[key](m, ox, r, add);
+    if (r() < 0.7) add.light(ox + 2, G);
+    if (r() < 0.6) add.light(ox + RW - 4, G);
+    const budget = Math.round((3 + i * 0.7) * br.mobs);
+    for (let k = 0; k < budget; k++) {
+      const t = mix[k % mix.length];
+      const x = ox + 4 + r() * (RW - 9);
+      const e = { id: eid++, t, x, y: 3, room: i, drop: true };
+      m.enemies.push(e);
+      room.enemies.push(e.id);
+    }
+    m.rooms.push(room);
+    // the doorway into this chamber is sealed until the PREVIOUS chamber is cleared
+    const wallX = ox + RW - 1;
+    wallWithDoor(wallX);
+    room.gate = { tiles: [[wallX, G - 3], [wallX, G - 2], [wallX, G - 1], [wallX + 1, G - 3], [wallX + 1, G - 2], [wallX + 1, G - 1]], x: wallX + 1 };
+    ox += RW + 1;
+  }
+
+  // ---- boss arena
+  const arena = { i: nRooms + 1, kind: 'boss', x0: ox, x1: W - 3, cleared: false, enemies: [] };
+  platform(m, ox + 5, ox + 10, G - 4); platform(m, ox + 13, ox + 17, G - 7);
+  for (const x of [3, 12, 21, 30]) m.props.push({ t: 'pillar', x: ox + x, y: G, bg: true, broken: x % 2 === 0 });
+  const add = makeAdd(arena.i);
+  add.light(ox + 2, G); add.light(ox + 20, G); add.light(W - 4, G);
+  m.boss = { id: eid++, t: info.boss, x: W - 10, y: G, room: arena.i };
+  arena.enemies.push(m.boss.id);
+  m.rooms.push(arena);
+  m.bossRoom = arena;
+  m.ambient = { dark: 0.5, ambientColor: 0x6a8a80, parallax: 'ruins', particles: 'fireflies', vignette: 0.6, music: 'ruins' };
   m.difficultyTag = info.name;
   return m;
 }
+
+export { getG, setG };

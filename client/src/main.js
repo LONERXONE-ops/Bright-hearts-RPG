@@ -2,12 +2,13 @@
 // Bright Hearts RPG entry point.
 import { G } from './game/state.js';
 import { loadSettings } from './save.js';
-import { buildAll } from './game/assets.js';
+import { buildAll, preloadPack } from './game/assets.js';
 import { WorldScene } from './game/WorldScene.js';
 import { UI } from './ui/ui.js';
 
 class BootScene extends Phaser.Scene {
   constructor() { super('boot'); }
+  preload() { preloadPack(this); }
   create() {
     const t0 = performance.now();
     buildAll(this, G.settings.lowFx);

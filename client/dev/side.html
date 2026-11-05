@@ -1,0 +1,10 @@
+<!doctype html><html><body style="margin:0;background:#6a5a64">
+<canvas id="c" width="1300" height="760"></canvas>
+<script type="module">
+import { sideSheet, SIDE_POSES } from '../src/art/sidechars.js';
+const c = document.getElementById('c'), g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+['warrior','mage','gunman','engineer','savage'].forEach((cl,i)=>{
+  const sh = sideSheet(cl).canvas();
+  [0,2,3,4,6,7,8,10].forEach((f,j)=> g.drawImage(sh, f*48,0,48,48, j*150, i*150, 144, 144));
+});
+</script></body></html>

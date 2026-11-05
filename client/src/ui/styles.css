@@ -202,6 +202,7 @@ button { font-family: inherit; color: inherit; }
 .act { position: relative; width: 52px; height: 52px; border-radius: 10px; display: grid; place-items: center; touch-action: none; cursor: pointer;
   background: rgba(26, 20, 18, .58); border: 2px solid rgba(20,14,12,.9); box-shadow: inset 0 0 0 1px rgba(236, 222, 196, .38), 0 3px 8px rgba(0,0,0,.3); }
 .act img { width: 30px; height: 30px; image-rendering: pixelated; filter: drop-shadow(0 2px 0 rgba(0,0,0,.6)); }
+.act.jump { background: rgba(40, 52, 70, .62); }
 .act.big { width: 62px; height: 62px; border-radius: 12px; background: rgba(48, 34, 28, .72); box-shadow: inset 0 0 0 2px rgba(246, 196, 69, .55), 0 3px 10px rgba(0,0,0,.35); }
 .act.big img { width: 38px; height: 38px; }
 .act:active, .act.down { transform: scale(.92); background: rgba(80, 60, 48, .8); }
